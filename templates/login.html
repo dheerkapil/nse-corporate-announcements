@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="theme-color" content="#1a73e8">
+    <title>Login — Corporate Announcements</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f8f9fa;
+            --surface: #ffffff;
+            --surface-2: #f1f3f4;
+            --text: #202124;
+            --text-muted: #5f6368;
+            --border: #dadce0;
+            --primary: #1a73e8;
+            --primary-fill: #1a73e8;
+            --primary-text: #ffffff;
+            --success: #1e8e3e;
+            --danger: #d93025;
+            --warning: #b06000;
+            --input-bg: #ffffff;
+            --shadow-1: 0 1px 2px rgba(60,64,67,0.1), 0 1px 3px 1px rgba(60,64,67,0.06);
+            --shadow-2: 0 1px 3px rgba(60,64,67,0.15), 0 4px 8px 3px rgba(60,64,67,0.08);
+        }
+        body.dark {
+            --bg: #000000;
+            --surface: #121212;
+            --surface-2: #1e1e1e;
+            --text: #e8eaed;
+            --text-muted: #b0b4b8;
+            --border: #3c4043;
+            --primary: #8ab4f8;
+            --primary-fill: #8ab4f8;
+            --primary-text: #202124;
+            --success: #81c995;
+            --danger: #f28b82;
+            --warning: #fdd663;
+            --input-bg: #1e1e1e;
+            --shadow-1: 0 1px 3px rgba(0,0,0,0.7), 0 1px 2px rgba(0,0,0,0.5);
+            --shadow-2: 0 4px 8px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.5);
+        }
+        * { box-sizing: border-box; }
+        html {
+            background-color: var(--bg) !important;
+            min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            background-color: var(--bg) !important;
+            color: var(--text);
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow-x: hidden;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+        .login-card {
+            background: var(--surface);
+            border-radius: 20px;
+            padding: 32px 24px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: var(--shadow-2);
+            border: 1px solid var(--border);
+            box-sizing: border-box;
+        }
+        .login-card h1 {
+            font-size: 1.35rem;
+            font-weight: 500;
+            margin: 0 0 6px 0;
+            color: var(--text);
+            text-align: center;
+            letter-spacing: 0.1px;
+        }
+        .subtitle {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-align: center;
+            margin: 0 0 22px 0;
+        }
+        .form-label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.4px;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            display: block;
+        }
+        .form-control {
+            font-size: 1.1rem;
+            padding: 0.6rem 0.9rem;
+            background: var(--input-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            letter-spacing: 6px;
+            text-align: center;
+            font-weight: 500;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .form-control:focus {
+            background: var(--input-bg);
+            color: var(--text);
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26,115,232,0.15);
+            outline: none;
+        }
+        .form-control::placeholder {
+            color: var(--text-muted);
+            opacity: 0.5;
+            letter-spacing: 4px;
+        }
+        .btn-login {
+            width: 100%;
+            font-size: 0.9rem;
+            padding: 0.65rem 1rem;
+            border-radius: 20px;
+            font-weight: 500;
+            letter-spacing: 0.2px;
+            border: none;
+            transition: filter 0.15s, transform 0.1s, background 0.15s;
+            cursor: pointer;
+            white-space: nowrap;
+            box-sizing: border-box;
+        }
+        .btn-login:active { transform: scale(0.98); }
+        .btn-primary {
+            background: var(--primary-fill);
+            color: var(--primary-text);
+        }
+        .btn-primary:hover { filter: brightness(1.05); }
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-outline {
+            background: var(--surface);
+            color: var(--text-muted);
+            border: 1px solid var(--border) !important;
+        }
+        .btn-outline:hover { background: var(--surface-2); }
+        .status-msg {
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-top: 16px;
+            text-align: center;
+            min-height: 20px;
+        }
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: none;
+            background: var(--surface-2);
+            color: var(--text);
+            font-size: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: var(--shadow-1);
+            transition: background 0.2s, transform 0.15s;
+            z-index: 100;
+        }
+        .theme-toggle:hover { background: var(--border); }
+        .theme-toggle:active { transform: scale(0.92); }
+        .spacer { height: 14px; }
+        @media (max-width: 576px) {
+            body { padding: 12px; }
+            .login-card { padding: 26px 20px; border-radius: 16px; }
+            .login-card h1 { font-size: 1.2rem; }
+            .btn-login { font-size: 0.85rem; padding: 0.6rem 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+    <button id="themeToggle" class="theme-toggle" title="Toggle theme" aria-label="Toggle theme">☾</button>
+    <div class="login-card">
+        <h1>Corporate Announcements</h1>
+        <p class="subtitle">Request a login code on Telegram</p>
+
+        <button id="sendOtpBtn" class="btn-login btn-primary">Send Password to Telegram</button>
+
+        <div class="spacer"></div>
+
+        <label class="form-label" for="otpInput">4-Digit Code</label>
+        <input type="text" id="otpInput" class="form-control" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="····" autocomplete="off">
+
+        <div class="spacer"></div>
+
+        <button id="verifyBtn" class="btn-login btn-outline">Verify &amp; Enter</button>
+
+        <div id="statusMsg" class="status-msg"></div>
+    </div>
+
+<script>
+const themeToggle = document.getElementById('themeToggle');
+
+function applyTheme(theme) {
+    if (theme === 'dark') {
+        document.body.classList.add('dark');
+        themeToggle.textContent = '☀';
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#000000');
+    } else {
+        document.body.classList.remove('dark');
+        themeToggle.textContent = '☾';
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1a73e8');
+    }
+}
+
+const savedTheme = localStorage.getItem('annTheme') || 'light';
+applyTheme(savedTheme);
+
+themeToggle.addEventListener('click', function() {
+    const isDark = document.body.classList.contains('dark');
+    const newTheme = isDark ? 'light' : 'dark';
+    applyTheme(newTheme);
+    localStorage.setItem('annTheme', newTheme);
+});
+
+const sendOtpBtn = document.getElementById('sendOtpBtn');
+const verifyBtn = document.getElementById('verifyBtn');
+const otpInput = document.getElementById('otpInput');
+const statusMsg = document.getElementById('statusMsg');
+
+function setStatus(type, msg) {
+    const colors = {
+        success: 'var(--success)',
+        danger: 'var(--danger)',
+        warning: 'var(--warning)',
+        info: 'var(--text-muted)'
+    };
+    statusMsg.style.color = colors[type] || 'var(--text)';
+    statusMsg.textContent = msg;
+}
+
+sendOtpBtn.addEventListener('click', function() {
+    sendOtpBtn.disabled = true;
+    setStatus('info', 'Sending…');
+    fetch('/api/send_otp', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                setStatus('success', 'Code sent. Check Telegram.');
+                otpInput.focus();
+            } else {
+                setStatus('danger', data.message || 'Failed to send');
+            }
+        })
+        .catch(() => setStatus('danger', 'Network error'))
+        .finally(() => {
+            setTimeout(() => { sendOtpBtn.disabled = false; }, 3000);
+        });
+});
+
+otpInput.addEventListener('input', function() {
+    this.value = this.value.replace(/\D/g, '').slice(0, 4);
+    if (this.value.length === 4) verifyBtn.focus();
+});
+
+otpInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && this.value.length === 4) verifyBtn.click();
+});
+
+verifyBtn.addEventListener('click', function() {
+    const code = otpInput.value.trim();
+    if (code.length !== 4) {
+        setStatus('danger', 'Enter the 4-digit code.');
+        return;
+    }
+    verifyBtn.disabled = true;
+    setStatus('info', 'Verifying…');
+    fetch('/api/verify_otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: code })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'ok') {
+            setStatus('success', 'Login successful. Loading…');
+            window.location.href = '/announcements';
+        } else {
+            setStatus('danger', data.message || 'Invalid code');
+            otpInput.value = '';
+            otpInput.focus();
+            verifyBtn.disabled = false;
+        }
+    })
+    .catch(() => {
+        setStatus('danger', 'Network error');
+        verifyBtn.disabled = false;
+    });
+});
+</script>
+</body>
+</html>

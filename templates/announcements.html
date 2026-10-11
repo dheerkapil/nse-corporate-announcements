@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a73e8">
+    <title>Corporate Announcements</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f8f9fa;
+            --surface: #ffffff;
+            --surface-2: #f1f3f4;
+            --text: #202124;
+            --text-muted: #5f6368;
+            --border: #dadce0;
+            --border-light: #e8eaed;
+            --primary: #1a73e8;
+            --primary-fill: #1a73e8;
+            --primary-text: #ffffff;
+            --success: #1e8e3e;
+            --danger: #d93025;
+            --warning: #b06000;
+            --warning-bg: #feefc3;
+            --input-bg: #ffffff;
+            --header-bg: #f1f3f4;
+            --row-hover: #f8f9fa;
+            --shadow-1: 0 1px 2px rgba(60,64,67,0.1), 0 1px 3px 1px rgba(60,64,67,0.06);
+            --shadow-2: 0 1px 3px rgba(60,64,67,0.15), 0 4px 8px 3px rgba(60,64,67,0.08);
+            --focus-ring: 0 0 0 3px rgba(26,115,232,0.35);
+        }
+        body.dark {
+            --bg: #000000;
+            --surface: #121212;
+            --surface-2: #1e1e1e;
+            --text: #e8eaed;
+            --text-muted: #b0b4b8;
+            --border: #3c4043;
+            --border-light: #2a2a2a;
+            --primary: #8ab4f8;
+            --primary-fill: #8ab4f8;
+            --primary-text: #202124;
+            --success: #81c995;
+            --danger: #f28b82;
+            --warning: #fdd663;
+            --warning-bg: #3c2f00;
+            --input-bg: #1e1e1e;
+            --header-bg: #1e1e1e;
+            --row-hover: #1a1a1a;
+            --shadow-1: 0 1px 3px rgba(0,0,0,0.7), 0 1px 2px rgba(0,0,0,0.5);
+            --shadow-2: 0 4px 8px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.5);
+            --focus-ring: 0 0 0 3px rgba(138,180,248,0.45);
+        }
+        * { box-sizing: border-box; }
+        html { background-color: var(--bg) !important; min-height: 100vh; margin: 0; padding: 0; }
+        body {
+            font-family: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            background-color: var(--bg) !important;
+            color: var(--text);
+            margin: 0;
+            padding: 12px;
+            min-height: 100vh;
+            overflow-x: hidden;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+        .container { max-width: 100%; padding: 0; }
+        .card {
+            border-radius: 16px;
+            background: var(--surface);
+            box-shadow: var(--shadow-1);
+            margin-bottom: 12px;
+            padding: 16px;
+            border: none;
+            color: var(--text);
+        }
+        .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding: 0 4px;
+            gap: 8px;
+        }
+        .header-row h1 { font-size: 1.4rem; font-weight: 500; margin: 0; color: var(--text); }
+        .header-actions { display: flex; gap: 8px; align-items: center; }
+        .theme-toggle-btn {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            border: none;
+            background: var(--surface-2);
+            color: var(--text);
+            font-size: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: var(--shadow-1);
+            flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        .theme-toggle-btn:hover { background: var(--border); }
+        .theme-toggle-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .header-btn {
+            height: 44px;
+            padding: 0 18px;
+            border-radius: 22px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            box-shadow: var(--shadow-1);
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .header-btn:hover { background: var(--surface-2); }
+        .header-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+        .header-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .header-btn.logout:hover { border-color: var(--danger); color: var(--danger); }
+
+        .form-label {
+            font-size: 0.7rem;
+            margin-bottom: 3px;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.3px;
+            display: block;
+            text-transform: uppercase;
+        }
+        .form-control-sm, .form-select-sm {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.6rem;
+            background: var(--input-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 100%;
+        }
+        .form-control-sm:focus, .form-select-sm:focus {
+            background: var(--input-bg);
+            color: var(--text);
+            border-color: var(--primary);
+            box-shadow: var(--focus-ring);
+            outline: none;
+        }
+        .form-control-sm::placeholder { color: var(--text-muted); opacity: 0.7; }
+
+        /* ═══════════ TABLE ═══════════ */
+        .table-scroll {
+            overflow: auto;
+            max-height: 75vh;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 12px;
+        }
+        .table-scroll table {
+            width: 100%;
+            min-width: 640px;
+            margin-bottom: 0;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: var(--surface);
+            table-layout: fixed;
+        }
+        .table-scroll thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--header-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 8px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            user-select: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: left;
+        }
+        .table-scroll thead th.sortable { cursor: pointer; }
+        .table-scroll thead th.sortable:hover { background: var(--surface-2); }
+        .table-scroll thead th .sort-icon { margin-left: 4px; font-size: 0.7rem; opacity: 0.4; }
+        .table-scroll thead th.active .sort-icon { opacity: 1; color: var(--primary); }
+        .table-scroll thead th.active { color: var(--primary); }
+        .table-scroll tbody td {
+            padding: 10px 8px;
+            vertical-align: middle;
+            border-bottom: 1px solid var(--border-light);
+            font-size: 0.85rem;
+            color: var(--text);
+            background: var(--surface);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .table-scroll tbody tr:hover > td { background: var(--row-hover); }
+
+        /* Column widths */
+        .col-push   { width: 60px; text-align: center; }
+        .col-topic  { width: 200px; }
+        .col-new    { width: 90px; text-align: right; }
+        .col-total  { width: 90px; text-align: right; }
+        .col-latest { width: 200px; }
+
+        /* Sticky columns: push + topic */
+        thead th.col-push,
+        thead th.col-topic { z-index: 15; box-shadow: 2px 0 3px -2px rgba(0,0,0,0.25); }
+        thead th.col-push { position: sticky; left: 0; }
+        thead th.col-topic { position: sticky; left: 60px; }
+        tbody td.col-push,
+        tbody td.col-topic { position: sticky; z-index: 5; box-shadow: 2px 0 3px -2px rgba(0,0,0,0.25); }
+        tbody td.col-push { left: 0; }
+        tbody td.col-topic { left: 60px; }
+        tbody tr:hover > td.col-push,
+        tbody tr:hover > td.col-topic { background: var(--row-hover); }
+
+        /* Footer */
+        tfoot tr td {
+            position: sticky;
+            bottom: 0;
+            background: var(--surface-2);
+            border-top: 2px solid var(--border);
+            padding: 12px 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text);
+            z-index: 6;
+        }
+        tfoot tr td.col-push,
+        tfoot tr td.col-topic { z-index: 8; }
+        tfoot tr td.col-topic { left: 60px; }
+        tfoot tr td.col-push { left: 0; }
+
+        /* Checkbox */
+        .push-toggle {
+            width: 18px; height: 18px;
+            cursor: pointer;
+            accent-color: var(--primary);
+            vertical-align: middle;
+        }
+
+        /* Topic link */
+        .topic-link {
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+            display: inline-block;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+        .topic-link:hover { color: var(--primary); text-decoration: underline; }
+
+        /* New count */
+        .new-badge {
+            display: inline-block;
+            min-width: 26px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: var(--primary-fill);
+            color: var(--primary-text);
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-align: center;
+        }
+        .new-zero {
+            color: var(--text-muted);
+            opacity: 0.5;
+        }
+        .total-val { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .latest-val { color: var(--text-muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+
+        /* Toast */
+        #toastContainer {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
+            pointer-events: none;
+        }
+        .toast-item {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 18px;
+            font-size: 0.85rem;
+            box-shadow: var(--shadow-2);
+            pointer-events: auto;
+            min-width: 260px;
+            text-align: center;
+        }
+
+        @media (max-width: 576px) {
+            body { padding: 6px; }
+            .card { padding: 12px; margin-bottom: 8px; border-radius: 12px; }
+            .header-row h1 { font-size: 1.05rem; }
+            .theme-toggle-btn { width: 38px; height: 38px; font-size: 0.9rem; }
+            .header-btn { height: 38px; padding: 0 12px; font-size: 0.75rem; }
+            .table-scroll thead th { font-size: 0.65rem; padding: 8px 6px; }
+            .table-scroll tbody td { font-size: 0.78rem; padding: 8px 6px; }
+            .col-push  { width: 48px; }
+            .col-topic { width: 150px; }
+            tfoot tr td.col-topic { left: 48px; }
+            .new-badge { font-size: 0.7rem; padding: 1px 6px; min-width: 22px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <div class="header-row">
+        <h1>Corporate Announcements</h1>
+        <div class="header-actions">
+            <button id="refreshBtn" class="header-btn" title="Fetch latest from NSE">Refresh</button>
+            <button id="themeToggle" class="theme-toggle-btn" title="Toggle theme" aria-label="Toggle theme">☾</button>
+            <button id="logoutBtn" class="header-btn logout" title="Log out">Logout</button>
+        </div>
+    </div>
+
+    <!-- ── Filters ── -->
+    <div class="card">
+        <div class="row g-2">
+            <div class="col-6 col-md-2">
+                <label class="form-label" for="daysFilter">Range</label>
+                <select id="daysFilter" class="form-select form-select-sm">
+                    <option value="7">7 days</option>
+                    <option value="30">30 days</option>
+                    <option value="90" selected>90 days</option>
+                    <option value="180">6 months</option>
+                    <option value="365">1 year</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label" for="impactFilter">Impact</label>
+                <select id="impactFilter" class="form-select form-select-sm">
+                    <option value="All">All</option>
+                    <option value="positive">Positive</option>
+                    <option value="negative">Negative</option>
+                    <option value="neutral">Neutral</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label" for="symbolFilter">Symbol</label>
+                <input type="text" id="symbolFilter" class="form-control-sm" placeholder="Optional — e.g. RELIANCE" autocomplete="off">
+            </div>
+            <div class="col-12 col-md-5 d-flex align-items-end">
+                <div id="summaryCaption" class="text-muted" style="font-size:0.8rem; padding-bottom:6px;">
+                    Loading…
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Summary table ── -->
+    <div class="card" style="padding: 6px;">
+        <div class="table-scroll">
+            <table id="summaryTable">
+                <thead>
+                    <tr>
+                        <th class="col-push" title="Tick to receive Telegram notifications for this topic">Push</th>
+                        <th class="col-topic sortable" data-sort="topic">Topic <span class="sort-icon">↕</span></th>
+                        <th class="col-new sortable" data-sort="new">New <span class="sort-icon">↕</span></th>
+                        <th class="col-total sortable" data-sort="total">Total <span class="sort-icon">↕</span></th>
+                        <th class="col-latest sortable" data-sort="latest">Latest <span class="sort-icon">↕</span></th>
+                    </tr>
+                </thead>
+                <tbody id="summaryBody">
+                    <tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">Loading…</td></tr>
+                </tbody>
+                <tfoot id="summaryFoot"></tfoot>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<div id="toastContainer" aria-live="polite"></div>
+
+<script>
+// ── Fetch wrapper: 401 → /login ──
+const originalFetch = window.fetch;
+window.fetch = function (...args) {
+    return originalFetch.apply(this, args).then(response => {
+        if (response.status === 401) {
+            window.location.href = '/login';
+            return Promise.reject(new Error('Unauthorized'));
+        }
+        return response;
+    });
+};
+
+// ── Theme toggle ──
+const themeToggle = document.getElementById('themeToggle');
+function applyTheme(theme) {
+    if (theme === 'dark') {
+        document.body.classList.add('dark');
+        themeToggle.textContent = '☀';
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#000000');
+    } else {
+        document.body.classList.remove('dark');
+        themeToggle.textContent = '☾';
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', '#1a73e8');
+    }
+}
+applyTheme(localStorage.getItem('annTheme') || 'light');
+themeToggle.addEventListener('click', function () {
+    const next = document.body.classList.contains('dark') ? 'light' : 'dark';
+    applyTheme(next);
+    localStorage.setItem('annTheme', next);
+});
+
+// ── Toast ──
+function showToast(msg) {
+    const c = document.getElementById('toastContainer');
+    const t = document.createElement('div');
+    t.className = 'toast-item';
+    t.textContent = msg;
+    c.appendChild(t);
+    setTimeout(() => { if (t.parentNode) t.remove(); }, 3500);
+}
+
+// ── Logout ──
+document.getElementById('logoutBtn').addEventListener('click', function () {
+    originalFetch('/api/logout', { method: 'POST' })
+        .finally(() => { window.location.href = '/login'; });
+});
+
+// ── State ──
+let summaryData = [];
+let tickedTopics = new Set();
+let sortState = { column: 'topic', direction: 1 };  // 1=asc, -1=desc
+
+// ── Load sort from URL ──
+(function loadSortFromUrl() {
+    const p = new URLSearchParams(location.search);
+    const s = p.get('sort');
+    const d = p.get('dir');
+    if (s && ['topic', 'new', 'total', 'latest'].includes(s)) {
+        sortState.column = s;
+        sortState.direction = d === 'desc' ? -1 : 1;
+    }
+})();
+
+// ── Load filters from URL ──
+(function loadFiltersFromUrl() {
+    const p = new URLSearchParams(location.search);
+    const d = p.get('days');
+    const i = p.get('impact');
+    const sym = p.get('symbol');
+    if (d) document.getElementById('daysFilter').value = d;
+    if (i) document.getElementById('impactFilter').value = i;
+    if (sym) document.getElementById('symbolFilter').value = sym;
+})();
+
+// ── Save state to URL ──
+function saveStateToUrl() {
+    const p = new URLSearchParams();
+    p.set('days', document.getElementById('daysFilter').value);
+    p.set('impact', document.getElementById('impactFilter').value);
+    const sym = document.getElementById('symbolFilter').value.trim();
+    if (sym) p.set('symbol', sym);
+    p.set('sort', sortState.column);
+    p.set('dir', sortState.direction === 1 ? 'asc' : 'desc');
+    history.replaceState(null, '', '?' + p.toString());
+}
+
+// ── Date formatting: 'YYYY-MM-DD HH:MM:SS' → '11 Oct 2026 14:30' ──
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatDateTime(s) {
+    if (!s) return '—';
+    try {
+        const [datePart, timePart] = s.split(' ');
+        const [y, mo, d] = datePart.split('-');
+        const [hh, mm] = (timePart || '00:00').split(':');
+        return `${parseInt(d)} ${MONTHS[parseInt(mo) - 1]} ${y} ${hh}:${mm}`;
+    } catch (e) { return s; }
+}
+
+// ── Load data ──
+async function loadSummary() {
+    const days = document.getElementById('daysFilter').value;
+    const impact = document.getElementById('impactFilter').value;
+    const symbol = document.getElementById('symbolFilter').value.trim();
+    const url = `/api/announcements/summary?days=${days}`
+              + `&impact=${encodeURIComponent(impact)}`
+              + (symbol ? `&symbol=${encodeURIComponent(symbol)}` : '');
+    try {
+        const r = await fetch(url);
+        const data = await r.json();
+        summaryData = data.rows || [];
+        renderSummary();
+        renderCaption();
+    } catch (e) {
+        document.getElementById('summaryBody').innerHTML =
+            `<tr><td colspan="5" style="text-align:center; color:var(--danger); padding:32px;">Failed to load.</td></tr>`;
+    }
+}
+
+async function loadSettings() {
+    try {
+        const r = await fetch('/api/notify_settings');
+        const data = await r.json();
+        tickedTopics = new Set(data.ticked || []);
+    } catch (e) {
+        tickedTopics = new Set();
+    }
+}
+
+// ── Render ──
+function renderCaption() {
+    const total = summaryData.reduce((s, r) => s + (r.total || 0), 0);
+    const days = document.getElementById('daysFilter').value;
+    const symbol = document.getElementById('symbolFilter').value.trim();
+    let txt = `${total.toLocaleString()} announcement${total === 1 ? '' : 's'} in the last ${days} day${days === '1' ? '' : 's'}`;
+    if (symbol) txt += ` for symbols matching "${symbol}"`;
+    document.getElementById('summaryCaption').textContent = txt + '.';
+}
+
+function renderSummary() {
+    const sorted = [...summaryData].sort((a, b) => {
+        const dir = sortState.direction;
+        const col = sortState.column;
+        if (col === 'topic')  return dir * String(a.topic).localeCompare(String(b.topic));
+        if (col === 'new')    return dir * ((a.new || 0) - (b.new || 0));
+        if (col === 'total')  return dir * ((a.total || 0) - (b.total || 0));
+        if (col === 'latest') return dir * String(a.latest || '').localeCompare(String(b.latest || ''));
+        return 0;
+    });
+
+    const tbody = document.getElementById('summaryBody');
+    if (!sorted.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:32px;">No data.</td></tr>`;
+    } else {
+        tbody.innerHTML = sorted.map(row => {
+            const checked = tickedTopics.has(row.topic) ? 'checked' : '';
+            const newCell = row.new > 0
+                ? `<span class="new-badge">${row.new}</span>`
+                : `<span class="new-zero">0</span>`;
+            const href = `/announcements/topic/${encodeURIComponent(row.topic)}`
+                       + `?days=${document.getElementById('daysFilter').value}`
+                       + `&impact=${encodeURIComponent(document.getElementById('impactFilter').value)}`
+                       + (document.getElementById('symbolFilter').value.trim()
+                          ? `&symbol=${encodeURIComponent(document.getElementById('symbolFilter').value.trim())}`
+                          : '');
+            return `
+                <tr>
+                    <td class="col-push">
+                        <input type="checkbox" class="push-toggle" data-topic="${row.topic}" ${checked} title="Push ${row.topic} to Telegram">
+                    </td>
+                    <td class="col-topic">
+                        <a class="topic-link" href="${href}" data-topic="${row.topic}">${row.topic}</a>
+                    </td>
+                    <td class="col-new">${newCell}</td>
+                    <td class="col-total"><span class="total-val">${row.total.toLocaleString()}</span></td>
+                    <td class="col-latest"><span class="latest-val">${formatDateTime(row.latest)}</span></td>
+                </tr>`;
+        }).join('');
+    }
+
+    // Footer totals
+    const totalNew = sorted.reduce((s, r) => s + (r.new || 0), 0);
+    const totalAll = sorted.reduce((s, r) => s + (r.total || 0), 0);
+    document.getElementById('summaryFoot').innerHTML = `
+        <tr>
+            <td class="col-push"></td>
+            <td class="col-topic">Total</td>
+            <td class="col-new">${totalNew}</td>
+            <td class="col-total">${totalAll.toLocaleString()}</td>
+            <td class="col-latest"></td>
+        </tr>`;
+
+    // Bind checkbox changes
+    document.querySelectorAll('.push-toggle').forEach(cb => {
+        cb.addEventListener('change', onToggle);
+    });
+
+    // Bind topic link clicks — mark viewed, then navigate
+    document.querySelectorAll('.topic-link').forEach(a => {
+        a.addEventListener('click', onTopicClick);
+    });
+}
+
+async function onToggle(e) {
+    const topic = e.target.dataset.topic;
+    const nowChecked = e.target.checked;
+    if (nowChecked) tickedTopics.add(topic);
+    else tickedTopics.delete(topic);
+
+    try {
+        const r = await fetch('/api/notify_settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticked: Array.from(tickedTopics) })
+        });
+        if (!r.ok) throw new Error('save failed');
+        showToast(nowChecked ? `Push enabled: ${topic}` : `Push disabled: ${topic}`);
+    } catch (err) {
+        // Revert on failure
+        if (nowChecked) tickedTopics.delete(topic);
+        else tickedTopics.add(topic);
+        e.target.checked = !nowChecked;
+        showToast('Could not save. Try again.');
+    }
+}
+
+function onTopicClick(e) {
+    e.preventDefault();
+    const topic = this.dataset.topic;
+    const href = this.href;
+    // Mark viewed (fire-and-forget), then navigate
+    fetch(`/api/announcements/mark_viewed/${encodeURIComponent(topic)}`, { method: 'POST' })
+        .finally(() => { window.location.href = href; });
+}
+
+// ── Sorting ──
+function updateSortIcons() {
+    document.querySelectorAll('th.sortable').forEach(th => {
+        const col = th.dataset.sort;
+        const icon = th.querySelector('.sort-icon');
+        if (sortState.column === col) {
+            th.classList.add('active');
+            icon.textContent = sortState.direction === 1 ? '\u2191' : '\u2193';
+        } else {
+            th.classList.remove('active');
+            icon.textContent = '\u2195';
+        }
+    });
+}
+
+document.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', function () {
+        const col = this.dataset.sort;
+        if (sortState.column === col) {
+            sortState.direction *= -1;
+        } else {
+            sortState.column = col;
+            sortState.direction = 1;
+        }
+        updateSortIcons();
+        renderSummary();
+        saveStateToUrl();
+    });
+});
+
+// ── Filters ──
+document.getElementById('daysFilter').addEventListener('change', () => {
+    saveStateToUrl();
+    loadSummary();
+});
+document.getElementById('impactFilter').addEventListener('change', () => {
+    saveStateToUrl();
+    loadSummary();
+});
+let symbolDebounce = null;
+document.getElementById('symbolFilter').addEventListener('input', () => {
+    clearTimeout(symbolDebounce);
+    symbolDebounce = setTimeout(() => {
+        saveStateToUrl();
+        loadSummary();
+    }, 350);
+});
+
+// ── Refresh button ──
+document.getElementById('refreshBtn').addEventListener('click', async function () {
+    const btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Refreshing…';
+    try {
+        const r = await fetch('/api/announcements/refresh', { method: 'POST' });
+        const data = await r.json();
+        const msg = `Fetched ${data.fetched}, new ${data.new}`;
+        showToast(msg);
+        await loadSummary();
+    } catch (e) {
+        showToast('Refresh failed.');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Refresh';
+    }
+});
+
+// ── Boot ──
+(async function init() {
+    updateSortIcons();
+    await loadSettings();
+    await loadSummary();
+})();
+</script>
+</body>
+</html>
