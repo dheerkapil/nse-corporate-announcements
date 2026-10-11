@@ -10,16 +10,10 @@ NSE_SESSION_TTL_SECONDS = 360
 NSE_REQUEST_TIMEOUT = 15
 NSE_COOKIE_WARMUP_TIMEOUT = 10
 
-# Backfill: NSE's announcements endpoint caps results per request, so we
-# page over the target window in weekly chunks with a polite pause between
-# requests to avoid rate limiting.
 NSE_BACKFILL_CHUNK_DAYS = 7
 NSE_BACKFILL_CHUNK_DELAY = 1.5
 
 # ── Retention ────────────────────────────────────────────
-# RETENTION_DAYS: how long the DB keeps rows before pruning.
-# BACKFILL_DAYS:  how far back a fresh (or partial) DB is backfilled.
-# DEFAULT_RANGE_DAYS: what the summary page shows on first load.
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "365"))
 BACKFILL_DAYS = int(os.environ.get("BACKFILL_DAYS", "90"))
 DEFAULT_RANGE_DAYS = int(os.environ.get("DEFAULT_RANGE_DAYS", "90"))
@@ -38,9 +32,9 @@ TELEGRAM_RETRY_DELAY = 2
 
 # ── Auth ─────────────────────────────────────────────────
 SESSION_SECRET_KEY = os.environ.get("SESSION_SECRET_KEY", "change-me-please")
-SESSION_DURATION_SECONDS = 30 * 24 * 3600      # 30 days
-OTP_VALIDITY_SECONDS = 300                     # 5 minutes
-OTP_THROTTLE_SECONDS = 60                      # 1 minute between sends
+SESSION_DURATION_SECONDS = 30 * 24 * 3600
+OTP_VALIDITY_SECONDS = 300
+OTP_THROTTLE_SECONDS = 60
 OTP_MAX_ATTEMPTS = 5
 OTP_DIGITS = 4
 
@@ -62,9 +56,7 @@ USER_AGENT = (
     "Chrome/120.0.0.0 Safari/537.36"
 )
 
-# ── Topic taxonomy ───────────────────────────────────────
-# Alphabetical so the summary table's default sort (Topic A→Z) needs no
-# client-side reordering.
+# ── Topic taxonomy (21 topics, alphabetical) ─────────────
 TOPICS = [
     "Acquisition",
     "AGM",
@@ -78,6 +70,7 @@ TOPICS = [
     "Demerger",
     "Dividend",
     "Earnings",
+    "General Updates",
     "Investor Communication",
     "Newspaper Publication",
     "Order Win",

@@ -103,8 +103,132 @@ def _get_session():
 
 # ═════════════════════════════════════════════════════════════════
 #  CLASSIFIER
+#
+#  NSE publishes announcements under fixed, structured category labels
+#  (e.g., "Bagging/Receiving of orders/contracts"). We map those
+#  directly. Anything not in the map falls through to regex rules and
+#  finally to "Other".
 # ═════════════════════════════════════════════════════════════════
 
+# Exact-match lookup of NSE's fixed category labels → our topic.
+# Keys are lowercase for case-insensitive matching.
+_NSE_CATEGORY_MAP = {
+    # Order wins
+    "awarding of order(s)/contract(s)":                          "Order Win",
+    "bagging/receiving of orders/contracts":                     "Order Win",
+    "letter of award":                                            "Order Win",
+
+    # Shareholding and related filings
+    "issue of securities":                                        "Shareholding",
+    "related party transactions":                                 "Shareholding",
+    "trading plan under pit":                                     "Shareholding",
+    "trading window":                                             "Shareholding",
+    "monitoring agency report":                                   "Shareholding",
+    "conversion":                                                 "Shareholding",
+    "shareholding pattern":                                       "Shareholding",
+    "disclosure under regulation 29":                             "Shareholding",
+    "disclosure under regulation 30":                             "Shareholding",
+    "disclosure under regulation 31":                             "Shareholding",
+    "qualified institutional placement":                          "Rights Issue",
+    "preferential issue":                                         "Rights Issue",
+
+    # Appointments and governance changes
+    "change in company secretary/compliance officer":             "Appointment",
+    "change in auditors":                                         "Appointment",
+    "change in director":                                         "Appointment",
+    "change in management":                                       "Appointment",
+    "demise":                                                     "Appointment",
+    "appointment":                                                "Appointment",
+    "resignation":                                                "Appointment",
+    "cessation":                                                  "Appointment",
+
+    # Regulatory / compliance / legal
+    "statement of deviation(s) or variation(s) under reg. 32":    "Tax/Regulatory",
+    "statement of deviation or variation under regulation 32":    "Tax/Regulatory",
+    "pendency of litigation(s)/dispute(s) or the outcome impacting the company": "Tax/Regulatory",
+    "action(s) taken or orders passed":                           "Tax/Regulatory",
+    "action(s) initiated or orders passed":                       "Tax/Regulatory",
+    "corporate insolvency resolution process":                    "Tax/Regulatory",
+    "suspension of trading":                                      "Tax/Regulatory",
+    "giving guarantees/indemnity/ becoming a surety for third party": "Tax/Regulatory",
+    "disruption of operations":                                   "Tax/Regulatory",
+    "defaults on payment of interest/principal":                  "Tax/Regulatory",
+    "rescission/termination(s)":                                  "Tax/Regulatory",
+    "granting/withdrawal/surrender/cancellation/suspension of key licenses/ regulatory approvals": "Tax/Regulatory",
+    "penalty":                                                    "Tax/Regulatory",
+    "show cause notice":                                          "Tax/Regulatory",
+    "regulatory action":                                          "Tax/Regulatory",
+
+    # Capex / business expansion
+    "adoption of new line(s) of business":                        "Capex",
+    "diversification/disinvestment":                              "Capex",
+    "product launch":                                             "Capex",
+    "utilisation of funds":                                       "Capex",
+    "capacity addition":                                          "Capacity Addition",
+    "commencement of commercial production":                      "Capacity Addition",
+    "commercial production":                                      "Capacity Addition",
+    "commissioning":                                              "Capacity Addition",
+
+    # Acquisition / agreements / M&A
+    "agreements":                                                 "Acquisition",
+    "memorandum of understanding/agreements":                     "Acquisition",
+    "sale or disposal":                                           "Acquisition",
+    "scheme of arrangement":                                      "Demerger",
+
+    # Delisting / demerger
+    "delisting":                                                  "Demerger",
+    "voluntary delisting":                                        "Demerger",
+
+    # Press / disclosure
+    "news verification":                                          "Press Release",
+    "disclosure of material issue":                               "Press Release",
+    "integrated filing- governance":                              "Press Release",
+    "press release":                                              "Press Release",
+    "media release":                                              "Press Release",
+
+    # Meetings
+    "shareholders meeting":                                       "AGM",
+    "annual general meeting":                                     "AGM",
+    "extraordinary general meeting":                              "AGM",
+    "postal ballot":                                              "AGM",
+    "committee meeting updates":                                  "Board Meeting",
+    "board meeting":                                              "Board Meeting",
+
+    # Corporate actions
+    "record date":                                                "Dividend",
+    "dividend":                                                   "Dividend",
+    "bonus issue":                                                "Bonus Issue",
+    "rights issue":                                               "Rights Issue",
+    "buy back":                                                   "Buyback",
+    "buyback":                                                    "Buyback",
+
+    # Investor / newspaper / earnings
+    "earnings call":                                              "Investor Communication",
+    "analyst meet":                                               "Investor Communication",
+    "investor presentation":                                      "Investor Communication",
+    "copy of newspaper publication":                              "Newspaper Publication",
+    "newspaper publication":                                      "Newspaper Publication",
+    "newspaper advertisement":                                    "Newspaper Publication",
+    "financial results":                                          "Earnings",
+    "quarterly results":                                          "Earnings",
+    "credit rating":                                              "Credit Rating",
+
+    # Explicit "General Updates" bucket
+    "general updates":                                            "General Updates",
+    "general update":                                             "General Updates",
+    "corrigendum":                                                "General Updates",
+    "monthly business updates":                                   "General Updates",
+    "monthly business update":                                    "General Updates",
+    "business update":                                            "General Updates",
+    "updates":                                                    "General Updates",
+    "update":                                                     "General Updates",
+    "others":                                                     "Other",
+    "other":                                                      "Other",
+}
+
+
+# Fallback regex rules for anything not covered by the direct map.
+# Ordered most-specific → most-generic.
 _TOPIC_RULES = [
     ("Dividend",              r"\bdividend\b"),
     ("Bonus Issue",           r"\bbonus\b"),
@@ -115,9 +239,9 @@ _TOPIC_RULES = [
     ("Demerger",              r"\bdemerger\b|\bde-merger\b|\bspin[\s-]?off\b"
                               r"|\bscheme\s+of\s+arrangement\b"),
     ("Acquisition",           r"\bacquisition\b|\bamalgamation\b|\bmerger\b"
-                              r"|\btakeover\b|\bsubsidiary\b|\bjoint\s+venture\b"),
-
-    ("Shareholding",          r"\bshareholding\s+pattern\b"
+                              r"|\btakeover\b|\bsubsidiary\b|\bjoint\s+venture\b"
+                              r"|\bmoU\b|\bmemorandum\s+of\s+understanding\b"),
+    ("Shareholding",          r"\bshareholding\b"
                               r"|\ballotment\s+of\s+(?:securities|shares|equity)\b"
                               r"|\binsider\s+trading\b"
                               r"|\bregulation\s+(?:7|29|30|31)\b"
@@ -126,7 +250,6 @@ _TOPIC_RULES = [
                               r"|\bconversion\s+of\s+(?:warrants|debentures)\b"
                               r"|\bdisclosure\s+under\b"
                               r"|\boptions?\s+to\s+purchase\b"),
-
     ("Appointment",           r"\bappoint(?:ment|ed|ing)?\b"
                               r"|\bresignation\b"
                               r"|\bcessation\b"
@@ -134,12 +257,10 @@ _TOPIC_RULES = [
                               r"|\bindependent\s+director\b"
                               r"|\bmanaging\s+director\b"
                               r"|\bchief\s+(?:executive|financial)\b"),
-
-    ("Order Win",             r"\b(?:wins?|winning|awarded|secures?|bags?|receives?|received)\b"
+    ("Order Win",             r"\b(?:wins?|winning|awarded|awarding|secures?|securing|bags?|bagging|receives?|receiving|received)\b"
                               r".{0,60}\b(?:order|contract|project|tender|loa|loi|work)\b"
                               r"|\b(?:order|contract|project|tender)\b.{0,60}"
                               r"\b(?:win|award|receiv|secur|bag)\w*\b"),
-
     ("Capacity Addition",     r"\b(?:capacity|production\s+capacity)\s+"
                               r"(?:expansion|addition|increase|enhancement)\b"
                               r"|\bcapacity\s+addition\b"
@@ -147,44 +268,38 @@ _TOPIC_RULES = [
                               r"|\bnew\s+(?:plant|facility|unit|manufacturing)\b"
                               r"|\bgreenfield\b|\bbrownfield\b"
                               r"|\bcommencement\s+of\s+(?:commercial\s+)?production\b"),
-
     ("Capex",                 r"\bcapex\b|\bcapital\s+expenditure\b"
                               r"|\bfund\s+raising\b|\bcapital\s+raising\b"),
-
     ("Tax/Regulatory",        r"\bpenalt(?:y|ies)\b|\bsebi\b|\brbi\b|\bgst\b"
                               r"|\bshow[\s-]?cause\b|\bdefault\b"
                               r"|\bdowngrade\b|\bnotice\s+under\b"
                               r"|\bprosecution\b|\binvestigation\b"
                               r"|\bsearch\s+and\s+seizure\b"),
-
     ("Credit Rating",         r"\bcredit\s+rating\b|\brating\s+action\b"
                               r"|\bicra\b|\bcrisil\b|\bcare\s+ratings?\b"
                               r"|\bind[- ]?ra\b|\bacuite\b"
                               r"|\brating\s+(?:upgrade|downgrade|reaffirm)"),
-
     ("Investor Communication",r"\bearnings?\s+(?:call|conference)\b"
                               r"|\banalyst\s+(?:meet|call|conference)\b"
                               r"|\binvestor\s+(?:call|meet|presentation|deck|conference)\b"
                               r"|\btranscript\s+of\b"
                               r"|\binstitutional\s+investor\s+meet\b"),
-
     ("Newspaper Publication", r"\bnewspaper\s+(?:publication|advertisement|advert)\b"
                               r"|\bcopy\s+of\s+newspaper\b"
                               r"|\bpublication\s+in\s+newspaper\b"),
-
     ("Press Release",         r"\bpress\s+release\b"
                               r"|\bmedia\s+release\b"
                               r"|\bpress\s+note\b"),
-
     ("Earnings",              r"\bfinancial\s+results?\b|\bq[1-4]\b"
                               r"|\bquarterly\b|\bannual\s+results?\b"
                               r"|\bresults?\b|\bprofit\b"
                               r"|\brevenue\b|\bebitda\b"),
-
     ("AGM",                   r"\bannual\s+general\s+meeting\b|\bagm\b|\begm\b"
                               r"|\bextraordinary\s+general\s+meeting\b"
-                              r"|\bpostal\s+ballot\b"),
-    ("Board Meeting",         r"\bboard\s+meeting\b"),
+                              r"|\bpostal\s+ballot\b"
+                              r"|\bshareholders\s+meeting\b"),
+    ("Board Meeting",         r"\bboard\s+meeting\b"
+                              r"|\bcommittee\s+meeting\b"),
 ]
 
 
@@ -202,9 +317,14 @@ _IMPACT_RULES = [
 
 
 def classify_topic(subject):
-    s = (subject or "").lower()
+    if not subject:
+        return "Other"
+    key = subject.strip().lower()
+    mapped = _NSE_CATEGORY_MAP.get(key)
+    if mapped:
+        return mapped
     for topic, pat in _TOPIC_RULES:
-        if re.search(pat, s, re.IGNORECASE):
+        if re.search(pat, key, re.IGNORECASE):
             return topic
     return "Other"
 
@@ -218,7 +338,7 @@ def classify_impact(subject):
 
 
 # ═════════════════════════════════════════════════════════════════
-#  DATABASE  (WAL mode + generous timeout for concurrent access)
+#  DATABASE
 # ═════════════════════════════════════════════════════════════════
 
 @contextmanager
@@ -226,8 +346,6 @@ def db():
     c = sqlite3.connect(config.DB_FILE, timeout=60)
     c.row_factory = sqlite3.Row
     try:
-        # WAL allows concurrent readers while a writer holds the lock.
-        # synchronous=NORMAL is safe with WAL and much faster.
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA synchronous=NORMAL")
         yield c
@@ -337,6 +455,24 @@ def fetch_announcements(from_date=None, to_date=None):
         if r.status_code == 429:
             logger.warning("NSE rate-limited (429) on announcements fetch")
             return []
+        if r.status_code == 403:
+            logger.warning("NSE 403 — refreshing session and retrying once")
+            global _session, _session_ts
+            with _session_lock:
+                _session = None
+                _session_ts = 0.0
+            s = _get_session()
+            if s is None:
+                return []
+            try:
+                if params:
+                    r = s.get(url, params=params, timeout=config.NSE_REQUEST_TIMEOUT)
+                else:
+                    r = s.get(url, timeout=config.NSE_REQUEST_TIMEOUT)
+            except Exception as e:
+                logger.warning(f"NSE retry failed: {e}")
+                return []
+
         if r.status_code != 200:
             logger.warning(f"NSE announcements HTTP {r.status_code}")
             return []
@@ -689,11 +825,6 @@ def get_all_for_backup():
 
 
 def restore_from_backup(items):
-    """
-    Restore rows from backup, re-classifying each subject with the
-    current classifier so taxonomy changes apply retroactively.
-    Batched insert to avoid holding a long write lock.
-    """
     if not items:
         return 0
 
@@ -712,7 +843,6 @@ def restore_from_backup(items):
 
     inserted = 0
     with db() as c:
-        # Use executemany — much faster than per-row execute
         before = c.total_changes
         c.executemany("""
             INSERT OR IGNORE INTO announcements
@@ -751,12 +881,6 @@ def restore_views_from_backup(items):
 
 
 def reclassify_all():
-    """
-    Safety net: re-classify every row with the current rules.
-    Mostly a no-op because restore_from_backup already classifies
-    correctly. Kept for cases where classifier rules change without
-    a full restore.
-    """
     updated = 0
     with db() as c:
         rows = c.execute("SELECT id, subject, topic, impact FROM announcements").fetchall()
