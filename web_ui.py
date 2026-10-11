@@ -39,6 +39,11 @@ GH_API = "https://api.github.com"
 _last_tick = time.time()
 _last_tick_lock = threading.Lock()
 
+# Set by startup_thread once restore is complete. fetcher_thread waits
+# on this event before its first cycle, so it never competes with the
+# restore for the SQLite write lock.
+_restore_complete = threading.Event()
+
 
 def _stamp_tick():
     global _last_tick
@@ -169,7 +174,7 @@ def gh_get(filename):
     url = f"{GH_API}/repos/{config.GITHUB_REPO}/contents/{filename}"
     url += f"?ref={config.GITHUB_CACHE_BRANCH}"
     try:
-        r = requests.get(url, headers=_gh_raw_headers(), timeout=60)
+        r = requests.get(url, headers=_gh_raw_headers(), timeout=90)
         if r.status_code != 200:
             logger.warning(f"gh_get({filename}): HTTP {r.status_code}")
             return None
@@ -207,7 +212,7 @@ def gh_put(filename, content, message):
         body["sha"] = sha
 
     try:
-        r = requests.put(url, headers=_gh_headers(), json=body, timeout=90)
+        r = requests.put(url, headers=_gh_headers(), json=body, timeout=120)
         if r.status_code in (200, 201):
             return True
         logger.warning(f"gh_put({filename}): HTTP {r.status_code} {r.text[:120]}")
@@ -255,7 +260,7 @@ def restore_announcements():
             logger.warning("Announcements restore: invalid payload")
             return 0
         n = announcements.restore_from_backup(data)
-        logger.info(f"Announcements restore complete")
+        logger.info("Announcements restore complete")
         return n
     except Exception as e:
         logger.error(f"Announcements restore failed: {e}")
@@ -520,6 +525,9 @@ def api_refresh():
     mode = (request.args.get("mode") or "").strip().lower()
     force = (mode == "backfill")
 
+    # Wait up to 60s for restore to complete before triggering fetch
+    _restore_complete.wait(timeout=60)
+
     result = announcements.run_fetch_cycle(force_backfill=force)
     _stamp_tick()
 
@@ -569,7 +577,16 @@ def api_notify_settings_set():
 # ═════════════════════════════════════════════════════════════════
 
 def fetcher_thread():
-    time.sleep(10)
+    """
+    Waits for the restore to finish before its first cycle.
+    Without this, the first fetch competes with restore for the
+    SQLite write lock and fails with 'database is locked'.
+    """
+    _restore_complete.wait()
+
+    # Small grace period so the WAL has a moment to settle
+    time.sleep(5)
+
     logger.info(f"Fetcher thread started — interval {config.POLL_INTERVAL_SECONDS}s")
 
     while True:
@@ -607,11 +624,13 @@ def startup_thread():
         restore_settings()
         restore_views()
         restore_announcements()
-        # After restore, re-classify every row with the current taxonomy.
-        # This applies taxonomy changes retroactively without re-fetching.
         announcements.reclassify_all()
     except Exception as e:
         logger.exception(f"startup restore error: {e}")
+    finally:
+        # Always release the gate — even if restore errored — so the
+        # fetcher isn't blocked forever.
+        _restore_complete.set()
     logger.info("Startup restore complete")
 
 

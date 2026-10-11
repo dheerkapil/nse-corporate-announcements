@@ -1,17 +1,5 @@
 """
 announcements.py — NSE corporate announcements data layer.
-
-Responsibilities:
-  • NSE session cookie management
-  • Fetch corporate announcements — single day OR chunked backfill
-  • Classify each announcement into one of 20 topics + impact direction
-  • SQLite persistence with deduplication
-  • Read helpers for the summary page and topic detail page
-  • Unread tracking per topic
-  • Retention pruning
-  • Backup / restore helpers for the GitHub cache branch
-
-No Flask dependencies. Imported by web_ui.py and the fetcher thread.
 """
 
 import re
@@ -42,14 +30,12 @@ def _now_str():
 
 
 def _range_bounds(days):
-    """Return (from_date, to_date) as 'YYYY-MM-DD' strings in IST."""
     now = _now()
     start = now - timedelta(days=int(days))
     return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
 
 
 def _nse_date_fmt(dt):
-    """NSE wants DD-MM-YYYY in the query string."""
     return dt.strftime("%d-%m-%Y")
 
 
@@ -67,7 +53,6 @@ _DATE_FORMATS = [
 
 
 def _normalize_date(raw):
-    """Normalize any NSE date string to 'YYYY-MM-DD HH:MM:SS'. Returns '' on failure."""
     if not raw:
         return ""
     raw = str(raw).strip()
@@ -89,7 +74,6 @@ _session_lock = threading.Lock()
 
 
 def _get_session():
-    """Return a requests.Session with fresh NSE cookies, or None on failure."""
     global _session, _session_ts
     now = time.time()
     with _session_lock:
@@ -121,9 +105,7 @@ def _get_session():
 #  CLASSIFIER
 # ═════════════════════════════════════════════════════════════════
 
-# Rules are ordered most-specific → most-generic. First match wins.
 _TOPIC_RULES = [
-    # ── Structured corporate actions (highest signal) ────────────
     ("Dividend",              r"\bdividend\b"),
     ("Bonus Issue",           r"\bbonus\b"),
     ("Rights Issue",          r"\brights?\s+issue\b"
@@ -135,7 +117,6 @@ _TOPIC_RULES = [
     ("Acquisition",           r"\bacquisition\b|\bamalgamation\b|\bmerger\b"
                               r"|\btakeover\b|\bsubsidiary\b|\bjoint\s+venture\b"),
 
-    # ── Shareholding / regulatory filings ────────────────────────
     ("Shareholding",          r"\bshareholding\s+pattern\b"
                               r"|\ballotment\s+of\s+(?:securities|shares|equity)\b"
                               r"|\binsider\s+trading\b"
@@ -146,7 +127,6 @@ _TOPIC_RULES = [
                               r"|\bdisclosure\s+under\b"
                               r"|\boptions?\s+to\s+purchase\b"),
 
-    # ── Management / governance ──────────────────────────────────
     ("Appointment",           r"\bappoint(?:ment|ed|ing)?\b"
                               r"|\bresignation\b"
                               r"|\bcessation\b"
@@ -155,13 +135,11 @@ _TOPIC_RULES = [
                               r"|\bmanaging\s+director\b"
                               r"|\bchief\s+(?:executive|financial)\b"),
 
-    # ── Order wins ───────────────────────────────────────────────
     ("Order Win",             r"\b(?:wins?|winning|awarded|secures?|bags?|receives?|received)\b"
                               r".{0,60}\b(?:order|contract|project|tender|loa|loi|work)\b"
                               r"|\b(?:order|contract|project|tender)\b.{0,60}"
                               r"\b(?:win|award|receiv|secur|bag)\w*\b"),
 
-    # ── Capacity and capex ───────────────────────────────────────
     ("Capacity Addition",     r"\b(?:capacity|production\s+capacity)\s+"
                               r"(?:expansion|addition|increase|enhancement)\b"
                               r"|\bcapacity\s+addition\b"
@@ -173,43 +151,36 @@ _TOPIC_RULES = [
     ("Capex",                 r"\bcapex\b|\bcapital\s+expenditure\b"
                               r"|\bfund\s+raising\b|\bcapital\s+raising\b"),
 
-    # ── Regulatory and compliance ────────────────────────────────
     ("Tax/Regulatory",        r"\bpenalt(?:y|ies)\b|\bsebi\b|\brbi\b|\bgst\b"
                               r"|\bshow[\s-]?cause\b|\bdefault\b"
                               r"|\bdowngrade\b|\bnotice\s+under\b"
                               r"|\bprosecution\b|\binvestigation\b"
                               r"|\bsearch\s+and\s+seizure\b"),
 
-    # ── Credit / rating actions ──────────────────────────────────
     ("Credit Rating",         r"\bcredit\s+rating\b|\brating\s+action\b"
                               r"|\bicra\b|\bcrisil\b|\bcare\s+ratings?\b"
                               r"|\bind[- ]?ra\b|\bacuite\b"
                               r"|\brating\s+(?:upgrade|downgrade|reaffirm)"),
 
-    # ── Investor communication ───────────────────────────────────
     ("Investor Communication",r"\bearnings?\s+(?:call|conference)\b"
                               r"|\banalyst\s+(?:meet|call|conference)\b"
                               r"|\binvestor\s+(?:call|meet|presentation|deck|conference)\b"
                               r"|\btranscript\s+of\b"
                               r"|\binstitutional\s+investor\s+meet\b"),
 
-    # ── Newspaper / publication copies ───────────────────────────
     ("Newspaper Publication", r"\bnewspaper\s+(?:publication|advertisement|advert)\b"
                               r"|\bcopy\s+of\s+newspaper\b"
                               r"|\bpublication\s+in\s+newspaper\b"),
 
-    # ── Press releases ───────────────────────────────────────────
     ("Press Release",         r"\bpress\s+release\b"
                               r"|\bmedia\s+release\b"
                               r"|\bpress\s+note\b"),
 
-    # ── Financial results ────────────────────────────────────────
     ("Earnings",              r"\bfinancial\s+results?\b|\bq[1-4]\b"
                               r"|\bquarterly\b|\bannual\s+results?\b"
                               r"|\bresults?\b|\bprofit\b"
                               r"|\brevenue\b|\bebitda\b"),
 
-    # ── Meetings ─────────────────────────────────────────────────
     ("AGM",                   r"\bannual\s+general\s+meeting\b|\bagm\b|\begm\b"
                               r"|\bextraordinary\s+general\s+meeting\b"
                               r"|\bpostal\s+ballot\b"),
@@ -247,14 +218,18 @@ def classify_impact(subject):
 
 
 # ═════════════════════════════════════════════════════════════════
-#  DATABASE
+#  DATABASE  (WAL mode + generous timeout for concurrent access)
 # ═════════════════════════════════════════════════════════════════
 
 @contextmanager
 def db():
-    c = sqlite3.connect(config.DB_FILE, timeout=10)
+    c = sqlite3.connect(config.DB_FILE, timeout=60)
     c.row_factory = sqlite3.Row
     try:
+        # WAL allows concurrent readers while a writer holds the lock.
+        # synchronous=NORMAL is safe with WAL and much faster.
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA synchronous=NORMAL")
         yield c
         c.commit()
     finally:
@@ -290,7 +265,6 @@ def init_db():
 
 
 def oldest_row_date():
-    """Return the oldest 'YYYY-MM-DD' in the DB, or None if empty."""
     with db() as c:
         row = c.execute("SELECT MIN(announced_at) AS d FROM announcements").fetchone()
     if row and row["d"]:
@@ -305,7 +279,7 @@ def row_count():
 
 
 # ═════════════════════════════════════════════════════════════════
-#  FETCHER  (single-day and date-range)
+#  FETCHER
 # ═════════════════════════════════════════════════════════════════
 
 _fetch_lock = threading.Lock()
@@ -342,14 +316,6 @@ def _parse_payload(payload):
 
 
 def fetch_announcements(from_date=None, to_date=None):
-    """
-    Fetch announcements from NSE.
-    If from_date/to_date are provided (both as date objects), the NSE API
-    is called with a date range. Otherwise the default NSE response
-    (typically the current day) is returned.
-
-    Returns list of dicts (may be empty).
-    """
     s = _get_session()
     if s is None:
         return []
@@ -386,10 +352,6 @@ def fetch_announcements(from_date=None, to_date=None):
 # ═════════════════════════════════════════════════════════════════
 
 def save_announcements(items):
-    """
-    Insert new rows, ignore duplicates.
-    Returns the subset of items that were genuinely new (i.e. inserted now).
-    """
     if not items:
         return []
     new_items = []
@@ -414,11 +376,10 @@ def save_announcements(items):
 
 
 # ═════════════════════════════════════════════════════════════════
-#  BACKFILL  (chunked date-range pulls)
+#  BACKFILL
 # ═════════════════════════════════════════════════════════════════
 
 def _chunk_windows(start_date, end_date, chunk_days):
-    """Yield (chunk_start, chunk_end) date pairs, oldest first."""
     cursor = start_date
     while cursor <= end_date:
         chunk_end = cursor + timedelta(days=chunk_days - 1)
@@ -429,10 +390,6 @@ def _chunk_windows(start_date, end_date, chunk_days):
 
 
 def needs_backfill():
-    """
-    True if the DB is empty, or if the oldest row is newer than
-    BACKFILL_DAYS ago (meaning we're missing earlier data).
-    """
     n = row_count()
     if n == 0:
         return True
@@ -448,10 +405,6 @@ def needs_backfill():
 
 
 def run_backfill():
-    """
-    Pull BACKFILL_DAYS of announcements in weekly chunks.
-    Returns dict: {'fetched': int, 'new': int, 'chunks': int}
-    """
     now_dt = _now()
     end_d = now_dt.date()
     start_d = (now_dt - timedelta(days=config.BACKFILL_DAYS)).date()
@@ -488,7 +441,6 @@ def run_backfill():
 # ═════════════════════════════════════════════════════════════════
 
 def _parse_date_arg(raw):
-    """'YYYY-MM-DD' → date object, or None."""
     if not raw:
         return None
     try:
@@ -498,19 +450,12 @@ def _parse_date_arg(raw):
 
 
 def _resolve_range(days=None, from_date=None, to_date=None):
-    """
-    Determine the effective (from_str, to_str) range.
-    Priority: explicit from/to > days > default.
-    Returns ('YYYY-MM-DD', 'YYYY-MM-DD').
-    """
     fd = _parse_date_arg(from_date)
     td = _parse_date_arg(to_date)
-
     if fd and td:
         if fd > td:
             fd, td = td, fd
         return fd.strftime("%Y-%m-%d"), td.strftime("%Y-%m-%d")
-
     if days is None:
         days = config.DEFAULT_RANGE_DAYS
     return _range_bounds(days)
@@ -518,10 +463,6 @@ def _resolve_range(days=None, from_date=None, to_date=None):
 
 def query_summary(days=None, symbol=None, impact=None,
                   from_date=None, to_date=None):
-    """
-    Return one dict per topic in config.TOPICS:
-        {'topic': str, 'total': int, 'new': int, 'latest': 'YYYY-MM-DD HH:MM:SS'}
-    """
     from_d, to_d = _resolve_range(days=days, from_date=from_date, to_date=to_date)
 
     where = ["announced_at >= ?", "announced_at <= ?"]
@@ -577,7 +518,6 @@ def query_summary(days=None, symbol=None, impact=None,
 
 def query_topic(topic, days=None, symbol=None, impact=None,
                 limit=None, offset=0, from_date=None, to_date=None):
-    """Return announcements for one topic in the range, newest first."""
     if limit is None:
         limit = config.MAX_ROWS_PER_PAGE
     from_d, to_d = _resolve_range(days=days, from_date=from_date, to_date=to_date)
@@ -607,7 +547,6 @@ def query_topic(topic, days=None, symbol=None, impact=None,
 
 def count_topic(topic, days=None, symbol=None, impact=None,
                 from_date=None, to_date=None):
-    """Return the true total number of rows for a topic (ignoring page limit)."""
     from_d, to_d = _resolve_range(days=days, from_date=from_date, to_date=to_date)
     where = ["topic = ?", "announced_at >= ?", "announced_at <= ?"]
     params = [topic, from_d, to_d + " 23:59:59"]
@@ -680,7 +619,6 @@ def count_unread_by_topic(days=None, symbol=None, impact=None):
 # ═════════════════════════════════════════════════════════════════
 
 def prune_old():
-    """Delete rows older than RETENTION_DAYS. Returns deleted count."""
     cutoff = (_now() - timedelta(days=config.RETENTION_DAYS)).strftime("%Y-%m-%d")
     with db() as c:
         cur = c.execute("DELETE FROM announcements WHERE announced_at < ?", (cutoff,))
@@ -695,15 +633,6 @@ def prune_old():
 # ═════════════════════════════════════════════════════════════════
 
 def run_fetch_cycle(force_backfill=False):
-    """
-    Orchestrate a fetch cycle.
-      - If force_backfill OR needs_backfill(): run the chunked backfill
-      - Otherwise: fetch the default (current day) and save
-      - Always: prune old rows
-
-    Returns dict:
-        {'fetched': int, 'new': int, 'new_items': [dict], 'mode': str}
-    """
     with _fetch_lock:
         mode = "default"
 
@@ -743,7 +672,7 @@ def run_fetch_cycle(force_backfill=False):
 
 
 # ═════════════════════════════════════════════════════════════════
-#  BACKUP / RESTORE  (called by web_ui.py)
+#  BACKUP / RESTORE
 # ═════════════════════════════════════════════════════════════════
 
 def get_all_for_backup():
@@ -762,42 +691,37 @@ def get_all_for_backup():
 def restore_from_backup(items):
     """
     Restore rows from backup, re-classifying each subject with the
-    current classifier. This makes taxonomy changes retroactive without
-    requiring a fresh fetch.
+    current classifier so taxonomy changes apply retroactively.
+    Batched insert to avoid holding a long write lock.
     """
     if not items:
         return 0
+
+    prepared = []
+    for it in items:
+        subject = it.get("subject", "")
+        prepared.append((
+            it.get("symbol", ""),
+            it.get("company", ""),
+            subject,
+            classify_topic(subject),
+            classify_impact(subject),
+            it.get("announced_at", ""),
+            it.get("attachment", ""),
+        ))
+
     inserted = 0
-    updated = 0
     with db() as c:
-        for it in items:
-            try:
-                subject = it.get("subject", "")
-                topic = classify_topic(subject)
-                impact = classify_impact(subject)
-                cur = c.execute("""
-                    INSERT INTO announcements
-                        (symbol, company, subject, topic, impact, announced_at, attachment)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(symbol, subject, announced_at)
-                    DO UPDATE SET topic = excluded.topic,
-                                  impact = excluded.impact
-                """, (
-                    it.get("symbol", ""),
-                    it.get("company", ""),
-                    subject,
-                    topic,
-                    impact,
-                    it.get("announced_at", ""),
-                    it.get("attachment", ""),
-                ))
-                if cur.rowcount == 1:
-                    inserted += 1
-                else:
-                    updated += 1
-            except Exception:
-                continue
-    logger.info(f"Restored {inserted} new, {updated} updated from backup")
+        # Use executemany — much faster than per-row execute
+        before = c.total_changes
+        c.executemany("""
+            INSERT OR IGNORE INTO announcements
+                (symbol, company, subject, topic, impact, announced_at, attachment)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, prepared)
+        inserted = c.total_changes - before
+
+    logger.info(f"Restore: {inserted} new rows inserted from {len(items)} records")
     return inserted
 
 
@@ -828,22 +752,26 @@ def restore_views_from_backup(items):
 
 def reclassify_all():
     """
-    One-shot: re-classify every row currently in the DB using the
-    current classifier. Called at startup after a restore so that any
-    taxonomy changes take effect immediately.
+    Safety net: re-classify every row with the current rules.
+    Mostly a no-op because restore_from_backup already classifies
+    correctly. Kept for cases where classifier rules change without
+    a full restore.
     """
     updated = 0
     with db() as c:
         rows = c.execute("SELECT id, subject, topic, impact FROM announcements").fetchall()
+        updates = []
         for r in rows:
             new_topic = classify_topic(r["subject"])
             new_impact = classify_impact(r["subject"])
             if new_topic != r["topic"] or new_impact != r["impact"]:
-                c.execute(
-                    "UPDATE announcements SET topic = ?, impact = ? WHERE id = ?",
-                    (new_topic, new_impact, r["id"])
-                )
-                updated += 1
+                updates.append((new_topic, new_impact, r["id"]))
+        if updates:
+            c.executemany(
+                "UPDATE announcements SET topic = ?, impact = ? WHERE id = ?",
+                updates
+            )
+            updated = len(updates)
     if updated:
         logger.info(f"Reclassified {updated} rows with current rules")
     else:
