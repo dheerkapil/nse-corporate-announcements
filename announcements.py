@@ -2,18 +2,16 @@
 announcements.py — NSE corporate announcements data layer.
 
 Responsibilities:
-  • NSE session cookie management (refresh on TTL)
-  • Fetch the corporate-announcements feed
-  • Classify each announcement into a topic and an impact direction
+  • NSE session cookie management
+  • Fetch corporate announcements — single day OR chunked backfill
+  • Classify each announcement into one of 20 topics + impact direction
   • SQLite persistence with deduplication
-  • Read helpers for the summary page and the topic detail page
+  • Read helpers for the summary page and topic detail page
   • Unread tracking per topic
   • Retention pruning
   • Backup / restore helpers for the GitHub cache branch
 
-This module has no Flask dependencies. It is imported by web_ui.py and by
-the background fetcher thread. Nothing in here talks to Telegram — that
-lives in telegram_notify.py.
+No Flask dependencies. Imported by web_ui.py and the fetcher thread.
 """
 
 import re
@@ -48,6 +46,11 @@ def _range_bounds(days):
     now = _now()
     start = now - timedelta(days=int(days))
     return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
+
+
+def _nse_date_fmt(dt):
+    """NSE wants DD-MM-YYYY in the query string."""
+    return dt.strftime("%d-%m-%Y")
 
 
 _DATE_FORMATS = [
@@ -119,35 +122,96 @@ def _get_session():
 # ═════════════════════════════════════════════════════════════════
 
 # Rules are ordered most-specific → most-generic. First match wins.
-# Example: "Board meeting to consider dividend" hits Dividend first,
-# which is the more useful signal than Board Meeting.
 _TOPIC_RULES = [
-    ("Dividend",       r"\bdividend\b"),
-    ("Bonus Issue",    r"\bbonus\b"),
-    ("Rights Issue",   r"\brights?\s+issue\b"
-                       r"|\bpreferential\s+(?:issue|allotment)\b"
-                       r"|\bqip\b"),
-    ("Buyback",        r"\bbuy[\s-]?back\b"),
-    ("Demerger",       r"\bdemerger\b|\bde-merger\b|\bspin[\s-]?off\b"
-                       r"|\bscheme\s+of\s+arrangement\b"),
-    ("Acquisition",    r"\bacquisition\b|\bamalgamation\b|\bmerger\b"
-                       r"|\btakeover\b|\bsubsidiary\b"),
-    ("Order Win",      r"\b(?:wins?|winning|awarded|secures?|bags?|receives?|received)\b"
-                       r".{0,60}\b(?:order|contract|project|tender|loa|loi|work)\b"
-                       r"|\b(?:order|contract|project|tender)\b.{0,60}"
-                       r"\b(?:win|award|receiv|secur|bag)\w*\b"),
-    ("Capex",          r"\bcapex\b|\bcapital\s+expenditure\b|\bexpansion\b"
-                       r"|\bgreenfield\b|\bbrownfield\b|\bnew\s+plant\b"
-                       r"|\bfund\s+raising\b"),
-    ("Tax/Regulatory", r"\bpenalt(?:y|ies)\b|\bsebi\b|\brbi\b|\bgst\b"
-                       r"|\bshow[\s-]?cause\b|\bcompliance\b|\bdefault\b"
-                       r"|\bdowngrade\b|\bresignation\b"),
-    ("Earnings",       r"\bfinancial\s+results?\b|\bq[1-4]\b|\bquarterly\b"
-                       r"|\bannual\s+results?\b|\bresults?\b|\bprofit\b"
-                       r"|\brevenue\b|\bebitda\b"),
-    ("AGM",            r"\bannual\s+general\s+meeting\b|\bagm\b|\begm\b"
-                       r"|\bextraordinary\s+general\s+meeting\b"),
-    ("Board Meeting",  r"\bboard\s+meeting\b"),
+    # ── Structured corporate actions (highest signal) ────────────
+    ("Dividend",              r"\bdividend\b"),
+    ("Bonus Issue",           r"\bbonus\b"),
+    ("Rights Issue",          r"\brights?\s+issue\b"
+                              r"|\bpreferential\s+(?:issue|allotment)\b"
+                              r"|\bqip\b"),
+    ("Buyback",               r"\bbuy[\s-]?back\b"),
+    ("Demerger",              r"\bdemerger\b|\bde-merger\b|\bspin[\s-]?off\b"
+                              r"|\bscheme\s+of\s+arrangement\b"),
+    ("Acquisition",           r"\bacquisition\b|\bamalgamation\b|\bmerger\b"
+                              r"|\btakeover\b|\bsubsidiary\b|\bjoint\s+venture\b"),
+
+    # ── Shareholding / regulatory filings ────────────────────────
+    ("Shareholding",          r"\bshareholding\s+pattern\b"
+                              r"|\ballotment\s+of\s+(?:securities|shares|equity)\b"
+                              r"|\binsider\s+trading\b"
+                              r"|\bregulation\s+(?:7|29|30|31)\b"
+                              r"|\bpromoter\s+(?:holding|stake|pledge)\b"
+                              r"|\besop\b|\bsweat\s+equity\b"
+                              r"|\bconversion\s+of\s+(?:warrants|debentures)\b"
+                              r"|\bdisclosure\s+under\b"),
+
+    # ── Management / governance ──────────────────────────────────
+    ("Appointment",           r"\bappoint(?:ment|ed|ing)?\b"
+                              r"|\bresignation\b"
+                              r"|\bcessation\b"
+                              r"|\bchange\s+in\s+(?:director|management|kmp|ceo|cfo|md)\b"
+                              r"|\bindependent\s+director\b"
+                              r"|\bmanaging\s+director\b"
+                              r"|\bchief\s+(?:executive|financial)\b"),
+
+    # ── Order wins ───────────────────────────────────────────────
+    ("Order Win",             r"\b(?:wins?|winning|awarded|secures?|bags?|receives?|received)\b"
+                              r".{0,60}\b(?:order|contract|project|tender|loa|loi|work)\b"
+                              r"|\b(?:order|contract|project|tender)\b.{0,60}"
+                              r"\b(?:win|award|receiv|secur|bag)\w*\b"),
+
+    # ── Capacity and capex ───────────────────────────────────────
+    ("Capacity Addition",     r"\b(?:capacity|production\s+capacity)\s+"
+                              r"(?:expansion|addition|increase|enhancement)\b"
+                              r"|\bcommission(?:ing|ed)?\b"
+                              r"|\bnew\s+(?:plant|facility|unit|manufacturing)\b"
+                              r"|\bgreenfield\b|\bbrownfield\b"
+                              r"|\bcommencement\s+of\s+(?:commercial\s+)?production\b"),
+
+    ("Capex",                 r"\bcapex\b|\bcapital\s+expenditure\b"
+                              r"|\bfund\s+raising\b|\bcapital\s+raising\b"),
+
+    # ── Regulatory and compliance ────────────────────────────────
+    ("Tax/Regulatory",        r"\bpenalt(?:y|ies)\b|\bsebi\b|\brbi\b|\bgst\b"
+                              r"|\bshow[\s-]?cause\b|\bdefault\b"
+                              r"|\bdowngrade\b|\bnotice\s+under\b"
+                              r"|\bprosecution\b|\binvestigation\b"
+                              r"|\bsearch\s+and\s+seizure\b"),
+
+    # ── Credit / rating actions ──────────────────────────────────
+    ("Credit Rating",         r"\bcredit\s+rating\b|\brating\s+action\b"
+                              r"|\bicra\b|\bcrisil\b|\bcare\s+ratings?\b"
+                              r"|\bind[- ]?ra\b|\bacuite\b"
+                              r"|\brating\s+(?:upgrade|downgrade|reaffirm)"),
+
+    # ── Investor communication ───────────────────────────────────
+    ("Investor Communication",r"\bearnings?\s+(?:call|conference)\b"
+                              r"|\banalyst\s+(?:meet|call|conference)\b"
+                              r"|\binvestor\s+(?:call|meet|presentation|deck|conference)\b"
+                              r"|\btranscript\s+of\b"
+                              r"|\binstitutional\s+investor\s+meet\b"),
+
+    # ── Newspaper / publication copies ───────────────────────────
+    ("Newspaper Publication", r"\bnewspaper\s+(?:publication|advertisement|advert)\b"
+                              r"|\bcopy\s+of\s+newspaper\b"
+                              r"|\bpublication\s+in\s+newspaper\b"),
+
+    # ── Press releases ───────────────────────────────────────────
+    ("Press Release",         r"\bpress\s+release\b"
+                              r"|\bmedia\s+release\b"
+                              r"|\bpress\s+note\b"),
+
+    # ── Financial results ────────────────────────────────────────
+    ("Earnings",              r"\bfinancial\s+results?\b|\bq[1-4]\b"
+                              r"|\bquarterly\b|\bannual\s+results?\b"
+                              r"|\bresults?\b|\bprofit\b"
+                              r"|\brevenue\b|\bebitda\b"),
+
+    # ── Meetings ─────────────────────────────────────────────────
+    ("AGM",                   r"\bannual\s+general\s+meeting\b|\bagm\b|\begm\b"
+                              r"|\bextraordinary\s+general\s+meeting\b"
+                              r"|\bpostal\s+ballot\b"),
+    ("Board Meeting",         r"\bboard\s+meeting\b"),
 ]
 
 
@@ -155,10 +219,12 @@ _IMPACT_RULES = [
     ("positive", r"\b(?:win|award|secure|receiv|approv|commission|expand"
                  r"|acquisition|invest|buyback|bonus|dividend|order|contract"
                  r"|record|highest|milestone|partnership|agreement|launch"
-                 r"|success|growth|profit|surge|jump|rise|recommend)\w*\b"),
+                 r"|success|growth|profit|surge|jump|rise|recommend"
+                 r"|upgrade|reaffirm)\w*\b"),
     ("negative", r"\b(?:penalt|show[\s-]?cause|default|downgrad|resign"
                  r"|terminat|cancel|withdraw|lawsuit|litigation|fraud|scam"
-                 r"|lost|loss|decline|fall|drop|slump|delay|postpone)\w*\b"),
+                 r"|lost|loss|decline|fall|drop|slump|delay|postpone"
+                 r"|investigation|seizure)\w*\b"),
 ]
 
 
@@ -221,8 +287,23 @@ def init_db():
     logger.info("Announcements DB ready")
 
 
+def oldest_row_date():
+    """Return the oldest 'YYYY-MM-DD' in the DB, or None if empty."""
+    with db() as c:
+        row = c.execute("SELECT MIN(announced_at) AS d FROM announcements").fetchone()
+    if row and row["d"]:
+        return row["d"][:10]
+    return None
+
+
+def row_count():
+    with db() as c:
+        row = c.execute("SELECT COUNT(*) AS n FROM announcements").fetchone()
+    return row["n"] if row else 0
+
+
 # ═════════════════════════════════════════════════════════════════
-#  FETCHER
+#  FETCHER  (single-day and date-range)
 # ═════════════════════════════════════════════════════════════════
 
 _fetch_lock = threading.Lock()
@@ -258,13 +339,36 @@ def _parse_payload(payload):
     return out
 
 
-def fetch_announcements():
-    """Fetch raw announcements from NSE. Returns list of dicts (may be empty)."""
+def fetch_announcements(from_date=None, to_date=None):
+    """
+    Fetch announcements from NSE.
+    If from_date/to_date are provided (both as date objects), the NSE API
+    is called with a date range. Otherwise the default NSE response
+    (typically the current day) is returned.
+
+    Returns list of dicts (may be empty).
+    """
     s = _get_session()
     if s is None:
         return []
+
+    url = config.NSE_ANNOUNCEMENTS_URL
+    params = None
+    if from_date and to_date:
+        params = {
+            "from_date": _nse_date_fmt(from_date),
+            "to_date":   _nse_date_fmt(to_date),
+        }
+
     try:
-        r = s.get(config.NSE_ANNOUNCEMENTS_URL, timeout=config.NSE_REQUEST_TIMEOUT)
+        if params:
+            r = s.get(url, params=params, timeout=config.NSE_REQUEST_TIMEOUT)
+        else:
+            r = s.get(url, timeout=config.NSE_REQUEST_TIMEOUT)
+
+        if r.status_code == 429:
+            logger.warning("NSE rate-limited (429) on announcements fetch")
+            return []
         if r.status_code != 200:
             logger.warning(f"NSE announcements HTTP {r.status_code}")
             return []
@@ -308,18 +412,115 @@ def save_announcements(items):
 
 
 # ═════════════════════════════════════════════════════════════════
+#  BACKFILL  (chunked date-range pulls)
+# ═════════════════════════════════════════════════════════════════
+
+def _chunk_windows(start_date, end_date, chunk_days):
+    """Yield (chunk_start, chunk_end) date pairs, oldest first."""
+    cursor = start_date
+    while cursor <= end_date:
+        chunk_end = cursor + timedelta(days=chunk_days - 1)
+        if chunk_end > end_date:
+            chunk_end = end_date
+        yield cursor, chunk_end
+        cursor = chunk_end + timedelta(days=1)
+
+
+def needs_backfill():
+    """
+    True if the DB is empty, or if the oldest row is newer than
+    BACKFILL_DAYS ago (meaning we're missing earlier data).
+    """
+    n = row_count()
+    if n == 0:
+        return True
+    oldest = oldest_row_date()
+    if not oldest:
+        return True
+    try:
+        oldest_dt = datetime.strptime(oldest, "%Y-%m-%d").date()
+    except Exception:
+        return True
+    target_start = (_now() - timedelta(days=config.BACKFILL_DAYS)).date()
+    return oldest_dt > target_start
+
+
+def run_backfill():
+    """
+    Pull BACKFILL_DAYS of announcements in weekly chunks.
+    Returns dict: {'fetched': int, 'new': int, 'chunks': int}
+    """
+    now_dt = _now()
+    end_d = now_dt.date()
+    start_d = (now_dt - timedelta(days=config.BACKFILL_DAYS)).date()
+
+    total_fetched = 0
+    total_new = 0
+    chunks_done = 0
+
+    logger.info(f"Backfill starting: {start_d} → {end_d} in "
+                f"{config.NSE_BACKFILL_CHUNK_DAYS}-day chunks")
+
+    for chunk_start, chunk_end in _chunk_windows(
+        start_d, end_d, config.NSE_BACKFILL_CHUNK_DAYS
+    ):
+        items = fetch_announcements(from_date=chunk_start, to_date=chunk_end)
+        if not items:
+            logger.info(f"  chunk {chunk_start}..{chunk_end}: 0 rows")
+        else:
+            new = save_announcements(items)
+            total_fetched += len(items)
+            total_new += len(new)
+            logger.info(f"  chunk {chunk_start}..{chunk_end}: "
+                        f"{len(items)} fetched, {len(new)} new")
+        chunks_done += 1
+        time.sleep(config.NSE_BACKFILL_CHUNK_DELAY)
+
+    logger.info(f"Backfill complete: {total_fetched} fetched, "
+                f"{total_new} new, {chunks_done} chunks")
+    return {"fetched": total_fetched, "new": total_new, "chunks": chunks_done}
+
+
+# ═════════════════════════════════════════════════════════════════
 #  QUERIES
 # ═════════════════════════════════════════════════════════════════
 
-def query_summary(days=None, symbol=None, impact=None):
+def _parse_date_arg(raw):
+    """'YYYY-MM-DD' → date object, or None."""
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(str(raw).strip(), "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _resolve_range(days=None, from_date=None, to_date=None):
+    """
+    Determine the effective (from_str, to_str) range.
+    Priority: explicit from/to > days > default.
+    Returns ('YYYY-MM-DD', 'YYYY-MM-DD').
+    """
+    fd = _parse_date_arg(from_date)
+    td = _parse_date_arg(to_date)
+
+    if fd and td:
+        if fd > td:
+            fd, td = td, fd
+        return fd.strftime("%Y-%m-%d"), td.strftime("%Y-%m-%d")
+
+    if days is None:
+        days = config.DEFAULT_RANGE_DAYS
+    return _range_bounds(days)
+
+
+def query_summary(days=None, symbol=None, impact=None,
+                  from_date=None, to_date=None):
     """
     Return one dict per topic in config.TOPICS:
         {'topic': str, 'total': int, 'new': int, 'latest': 'YYYY-MM-DD HH:MM:SS'}
-    Topics with zero announcements in the range are included with total=0.
     """
-    if days is None:
-        days = config.DEFAULT_RANGE_DAYS
-    from_d, to_d = _range_bounds(days)
+    from_d, to_d = _resolve_range(days=days, from_date=from_date, to_date=to_date)
 
     where = ["announced_at >= ?", "announced_at <= ?"]
     params = [from_d, to_d + " 23:59:59"]
@@ -340,8 +541,8 @@ def query_summary(days=None, symbol=None, impact=None):
     """
     with db() as c:
         total_rows = c.execute(sql_totals, params).fetchall()
-
-    by_topic = {r["topic"]: {"total": r["total"], "latest": r["latest"] or ""} for r in total_rows}
+    by_topic = {r["topic"]: {"total": r["total"], "latest": r["latest"] or ""}
+                for r in total_rows}
 
     views = get_topic_views()
 
@@ -372,13 +573,12 @@ def query_summary(days=None, symbol=None, impact=None):
     ]
 
 
-def query_topic(topic, days=None, symbol=None, impact=None, limit=None, offset=0):
+def query_topic(topic, days=None, symbol=None, impact=None,
+                limit=None, offset=0, from_date=None, to_date=None):
     """Return announcements for one topic in the range, newest first."""
-    if days is None:
-        days = config.DEFAULT_RANGE_DAYS
     if limit is None:
         limit = config.MAX_ROWS_PER_PAGE
-    from_d, to_d = _range_bounds(days)
+    from_d, to_d = _resolve_range(days=days, from_date=from_date, to_date=to_date)
 
     where = ["topic = ?", "announced_at >= ?", "announced_at <= ?"]
     params = [topic, from_d, to_d + " 23:59:59"]
@@ -408,7 +608,6 @@ def query_topic(topic, days=None, symbol=None, impact=None, limit=None, offset=0
 # ═════════════════════════════════════════════════════════════════
 
 def mark_topic_viewed(topic):
-    """Stamp the given topic as viewed now. Called when the topic page opens."""
     now_str = _now_str()
     with db() as c:
         c.execute("""
@@ -420,22 +619,13 @@ def mark_topic_viewed(topic):
 
 
 def get_topic_views():
-    """Return {topic: 'YYYY-MM-DD HH:MM:SS'} for every topic that has been viewed."""
     with db() as c:
         rows = c.execute("SELECT topic, viewed_at FROM topic_views").fetchall()
     return {r["topic"]: r["viewed_at"] for r in rows}
 
 
 def count_unread_by_topic(days=None, symbol=None, impact=None):
-    """
-    Return {topic: unread_count} where unread means:
-      seen_at > last_viewed_at[topic]
-    A topic never viewed shows all its rows in the range as unread.
-    """
-    if days is None:
-        days = config.DEFAULT_RANGE_DAYS
-    from_d, to_d = _range_bounds(days)
-
+    from_d, to_d = _resolve_range(days=days)
     views = get_topic_views()
 
     where = ["announced_at >= ?", "announced_at <= ?"]
@@ -484,29 +674,53 @@ def prune_old():
 #  PUBLIC ENTRY POINT
 # ═════════════════════════════════════════════════════════════════
 
-def run_fetch_cycle():
+def run_fetch_cycle(force_backfill=False):
     """
-    Orchestrate a full fetch → save → prune cycle.
+    Orchestrate a fetch cycle.
+      - If force_backfill OR needs_backfill(): run the chunked backfill
+      - Otherwise: fetch the default (current day) and save
+      - Always: prune old rows
+
     Returns dict:
-        {
-          'fetched': int,        # rows returned by NSE
-          'new': int,            # rows genuinely inserted
-          'new_items': [dict],   # the new items, for Telegram notification
-        }
+        {'fetched': int, 'new': int, 'new_items': [dict], 'mode': str}
     """
     with _fetch_lock:
+        mode = "default"
+
+        if force_backfill or needs_backfill():
+            mode = "backfill"
+            result = run_backfill()
+            prune_old()
+            # Only return today's fresh rows for notification —
+            # never spam Telegram with 90 days of history.
+            today_str = _now().strftime("%Y-%m-%d")
+            with db() as c:
+                rows = c.execute("""
+                    SELECT symbol, company, subject, topic, impact,
+                           announced_at, attachment
+                    FROM announcements
+                    WHERE announced_at >= ? AND seen_at >= datetime('now', '-1 minute')
+                """, (today_str,)).fetchall()
+            new_items = [dict(r) for r in rows]
+            return {
+                "fetched":   result["fetched"],
+                "new":       result["new"],
+                "new_items": new_items,
+                "mode":      mode,
+            }
+
         items = fetch_announcements()
         if not items:
-            return {"fetched": 0, "new": 0, "new_items": []}
+            return {"fetched": 0, "new": 0, "new_items": [], "mode": mode}
 
         new_items = save_announcements(items)
         prune_old()
-
         logger.info(f"Fetch cycle: {len(items)} fetched, {len(new_items)} new")
         return {
             "fetched":   len(items),
             "new":       len(new_items),
             "new_items": new_items,
+            "mode":      mode,
         }
 
 
@@ -515,7 +729,6 @@ def run_fetch_cycle():
 # ═════════════════════════════════════════════════════════════════
 
 def get_all_for_backup():
-    """Return all rows in the retention window, ordered by date."""
     cutoff = (_now() - timedelta(days=config.RETENTION_DAYS)).strftime("%Y-%m-%d")
     with db() as c:
         rows = c.execute("""
@@ -529,7 +742,6 @@ def get_all_for_backup():
 
 
 def restore_from_backup(items):
-    """Insert rows restored from GitHub backup. Returns inserted count."""
     if not items:
         return 0
     inserted = 0
@@ -557,14 +769,12 @@ def restore_from_backup(items):
 
 
 def get_views_for_backup():
-    """Return the topic_views table for GitHub backup."""
     with db() as c:
         rows = c.execute("SELECT topic, viewed_at FROM topic_views").fetchall()
     return [dict(r) for r in rows]
 
 
 def restore_views_from_backup(items):
-    """Restore topic_views rows from a GitHub backup. Returns restored count."""
     if not items:
         return 0
     restored = 0
