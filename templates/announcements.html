@@ -146,6 +146,21 @@
         }
         .form-control-sm::placeholder { color: var(--text-muted); opacity: 0.7; }
 
+        /* ── Caption ── */
+        .caption {
+            font-size: 0.82rem;
+            color: var(--text);
+            opacity: 0.72;
+            padding-bottom: 6px;
+            align-self: end;
+            line-height: 1.5;
+        }
+        body.dark .caption { opacity: 0.78; }
+
+        /* ── Custom date range sub-row ── */
+        .custom-range-row { display: none; }
+        .custom-range-row.show { display: flex; }
+
         /* ═══════════ TABLE ═══════════ */
         .table-scroll {
             overflow: auto;
@@ -155,7 +170,7 @@
         }
         .table-scroll table {
             width: 100%;
-            min-width: 640px;
+            min-width: 720px;
             margin-bottom: 0;
             border-collapse: separate;
             border-spacing: 0;
@@ -182,7 +197,14 @@
         }
         .table-scroll thead th.sortable { cursor: pointer; }
         .table-scroll thead th.sortable:hover { background: var(--surface-2); }
-        .table-scroll thead th .sort-icon { margin-left: 4px; font-size: 0.7rem; opacity: 0.4; }
+        .table-scroll thead th .sort-icon {
+            display: inline-block;
+            width: 10px;
+            text-align: center;
+            margin-left: 4px;
+            font-size: 0.7rem;
+            opacity: 0.35;
+        }
         .table-scroll thead th.active .sort-icon { opacity: 1; color: var(--primary); }
         .table-scroll thead th.active { color: var(--primary); }
         .table-scroll tbody td {
@@ -198,12 +220,18 @@
         }
         .table-scroll tbody tr:hover > td { background: var(--row-hover); }
 
-        /* Column widths */
-        .col-push   { width: 60px; text-align: center; }
-        .col-topic  { width: 200px; }
-        .col-new    { width: 90px; text-align: right; }
-        .col-total  { width: 90px; text-align: right; }
-        .col-latest { width: 200px; }
+        /* Column widths and alignment */
+        .col-push   { width: 60px;  text-align: center; }
+        .col-topic  { width: 200px; text-align: left;   }
+        .col-new    { width: 90px;  text-align: right;  }
+        .col-total  { width: 90px;  text-align: right;  }
+        .col-latest { width: 200px; text-align: left;   }
+
+        /* Header alignment matches value alignment */
+        thead th.col-new,
+        thead th.col-total { text-align: right; }
+        thead th.col-latest { text-align: left; }
+        thead th.col-push { text-align: center; }
 
         /* Sticky columns: push + topic */
         thead th.col-push,
@@ -228,11 +256,14 @@
             font-size: 0.85rem;
             color: var(--text);
             z-index: 6;
+            white-space: nowrap;
         }
         tfoot tr td.col-push,
-        tfoot tr td.col-topic { z-index: 8; }
-        tfoot tr td.col-topic { left: 60px; }
+        tfoot tr td.col-topic { z-index: 8; box-shadow: 2px 0 3px -2px rgba(0,0,0,0.25); }
         tfoot tr td.col-push { left: 0; }
+        tfoot tr td.col-topic { left: 60px; }
+        tfoot tr td.col-new,
+        tfoot tr td.col-total { text-align: right; }
 
         /* Checkbox */
         .push-toggle {
@@ -256,7 +287,7 @@
         }
         .topic-link:hover { color: var(--primary); text-decoration: underline; }
 
-        /* New count */
+        /* New count badge */
         .new-badge {
             display: inline-block;
             min-width: 26px;
@@ -307,11 +338,15 @@
             .header-row h1 { font-size: 1.05rem; }
             .theme-toggle-btn { width: 38px; height: 38px; font-size: 0.9rem; }
             .header-btn { height: 38px; padding: 0 12px; font-size: 0.75rem; }
+            .table-scroll table { min-width: 640px; }
             .table-scroll thead th { font-size: 0.65rem; padding: 8px 6px; }
             .table-scroll tbody td { font-size: 0.78rem; padding: 8px 6px; }
-            .col-push  { width: 48px; }
-            .col-topic { width: 150px; }
-            tfoot tr td.col-topic { left: 48px; }
+            .col-push  { width: 44px; }
+            .col-topic { width: 130px; }
+            tbody td.col-topic { left: 44px; }
+            thead th.col-topic { left: 44px; }
+            tfoot tr td.col-topic { left: 44px; }
+            tfoot tr td.col-push { left: 0; }
             .new-badge { font-size: 0.7rem; padding: 1px 6px; min-width: 22px; }
         }
     </style>
@@ -339,6 +374,7 @@
                     <option value="90" selected>90 days</option>
                     <option value="180">6 months</option>
                     <option value="365">1 year</option>
+                    <option value="custom">Custom…</option>
                 </select>
             </div>
             <div class="col-6 col-md-2">
@@ -355,8 +391,23 @@
                 <input type="text" id="symbolFilter" class="form-control-sm" placeholder="Optional — e.g. RELIANCE" autocomplete="off">
             </div>
             <div class="col-12 col-md-5 d-flex align-items-end">
-                <div id="summaryCaption" class="text-muted" style="font-size:0.8rem; padding-bottom:6px;">
-                    Loading…
+                <div id="summaryCaption" class="caption">Loading…</div>
+            </div>
+        </div>
+
+        <!-- Custom date range sub-row -->
+        <div class="row g-2 custom-range-row" id="customRangeRow" style="margin-top: 8px;">
+            <div class="col-6 col-md-2">
+                <label class="form-label" for="fromDate">From</label>
+                <input type="date" id="fromDate" class="form-control-sm">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label" for="toDate">To</label>
+                <input type="date" id="toDate" class="form-control-sm">
+            </div>
+            <div class="col-12 col-md-8 d-flex align-items-end">
+                <div class="caption" style="padding-bottom:6px;">
+                    Both dates required. Applied automatically when set.
                 </div>
             </div>
         </div>
@@ -400,7 +451,7 @@ window.fetch = function (...args) {
     });
 };
 
-// ── Theme toggle ──
+// ── Theme ──
 const themeToggle = document.getElementById('themeToggle');
 function applyTheme(theme) {
     if (theme === 'dark') {
@@ -439,44 +490,86 @@ document.getElementById('logoutBtn').addEventListener('click', function () {
 // ── State ──
 let summaryData = [];
 let tickedTopics = new Set();
-let sortState = { column: 'topic', direction: 1 };  // 1=asc, -1=desc
+let sortState = { column: 'topic', direction: 1 };
 
-// ── Load sort from URL ──
-(function loadSortFromUrl() {
-    const p = new URLSearchParams(location.search);
-    const s = p.get('sort');
-    const d = p.get('dir');
-    if (s && ['topic', 'new', 'total', 'latest'].includes(s)) {
-        sortState.column = s;
-        sortState.direction = d === 'desc' ? -1 : 1;
+// ── Helpers ──
+function isCustomRange() {
+    return document.getElementById('daysFilter').value === 'custom';
+}
+
+function getRangeParams() {
+    if (isCustomRange()) {
+        const from = document.getElementById('fromDate').value;
+        const to = document.getElementById('toDate').value;
+        if (from && to) return { from_date: from, to_date: to };
+        // Custom selected but dates incomplete → fall back to 90 days
+        return { days: '90' };
     }
-})();
+    return { days: document.getElementById('daysFilter').value };
+}
 
-// ── Load filters from URL ──
-(function loadFiltersFromUrl() {
+function getFilterParams() {
+    const impact = document.getElementById('impactFilter').value;
+    const symbol = document.getElementById('symbolFilter').value.trim();
+    return { impact, symbol };
+}
+
+function buildTopicHref(topic) {
+    const params = new URLSearchParams();
+    const range = getRangeParams();
+    if (range.from_date) {
+        params.set('from_date', range.from_date);
+        params.set('to_date', range.to_date);
+    } else {
+        params.set('days', range.days);
+    }
+    const f = getFilterParams();
+    if (f.impact && f.impact !== 'All') params.set('impact', f.impact);
+    if (f.symbol) params.set('symbol', f.symbol);
+    return `/announcements/topic/${encodeURIComponent(topic)}?${params.toString()}`;
+}
+
+// ── Load state from URL ──
+(function loadFromUrl() {
     const p = new URLSearchParams(location.search);
     const d = p.get('days');
+    const fd = p.get('from_date');
+    const td = p.get('to_date');
     const i = p.get('impact');
-    const sym = p.get('symbol');
-    if (d) document.getElementById('daysFilter').value = d;
+    const s = p.get('symbol');
+    if (fd && td) {
+        document.getElementById('daysFilter').value = 'custom';
+        document.getElementById('fromDate').value = fd;
+        document.getElementById('toDate').value = td;
+        document.getElementById('customRangeRow').classList.add('show');
+    } else if (d) {
+        document.getElementById('daysFilter').value = d;
+    }
     if (i) document.getElementById('impactFilter').value = i;
-    if (sym) document.getElementById('symbolFilter').value = sym;
+    if (s) document.getElementById('symbolFilter').value = s;
 })();
 
 // ── Save state to URL ──
 function saveStateToUrl() {
     const p = new URLSearchParams();
-    p.set('days', document.getElementById('daysFilter').value);
-    p.set('impact', document.getElementById('impactFilter').value);
-    const sym = document.getElementById('symbolFilter').value.trim();
-    if (sym) p.set('symbol', sym);
+    const range = getRangeParams();
+    if (range.from_date) {
+        p.set('from_date', range.from_date);
+        p.set('to_date', range.to_date);
+    } else {
+        p.set('days', range.days);
+    }
+    const f = getFilterParams();
+    if (f.impact && f.impact !== 'All') p.set('impact', f.impact);
+    if (f.symbol) p.set('symbol', f.symbol);
     p.set('sort', sortState.column);
     p.set('dir', sortState.direction === 1 ? 'asc' : 'desc');
     history.replaceState(null, '', '?' + p.toString());
 }
 
-// ── Date formatting: 'YYYY-MM-DD HH:MM:SS' → '11 Oct 2026 14:30' ──
+// ── Date formatting ──
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
 function formatDateTime(s) {
     if (!s) return '—';
     try {
@@ -487,20 +580,34 @@ function formatDateTime(s) {
     } catch (e) { return s; }
 }
 
-// ── Load data ──
-async function loadSummary() {
-    const days = document.getElementById('daysFilter').value;
-    const impact = document.getElementById('impactFilter').value;
-    const symbol = document.getElementById('symbolFilter').value.trim();
-    const url = `/api/announcements/summary?days=${days}`
-              + `&impact=${encodeURIComponent(impact)}`
-              + (symbol ? `&symbol=${encodeURIComponent(symbol)}` : '');
+function formatDateShort(isoDate) {
+    if (!isoDate) return '';
     try {
-        const r = await fetch(url);
+        const [y, mo, d] = isoDate.split('-');
+        return `${parseInt(d)} ${MONTHS[parseInt(mo) - 1]} ${y}`;
+    } catch (e) { return isoDate; }
+}
+
+// ── Load summary ──
+async function loadSummary() {
+    const range = getRangeParams();
+    const f = getFilterParams();
+    const params = new URLSearchParams();
+    if (range.from_date) {
+        params.set('from_date', range.from_date);
+        params.set('to_date', range.to_date);
+    } else {
+        params.set('days', range.days);
+    }
+    params.set('impact', f.impact);
+    if (f.symbol) params.set('symbol', f.symbol);
+
+    try {
+        const r = await fetch('/api/announcements/summary?' + params.toString());
         const data = await r.json();
         summaryData = data.rows || [];
         renderSummary();
-        renderCaption();
+        renderCaption(data);
     } catch (e) {
         document.getElementById('summaryBody').innerHTML =
             `<tr><td colspan="5" style="text-align:center; color:var(--danger); padding:32px;">Failed to load.</td></tr>`;
@@ -517,16 +624,29 @@ async function loadSettings() {
     }
 }
 
-// ── Render ──
-function renderCaption() {
+// ── Caption ──
+function renderCaption(data) {
     const total = summaryData.reduce((s, r) => s + (r.total || 0), 0);
-    const days = document.getElementById('daysFilter').value;
     const symbol = document.getElementById('symbolFilter').value.trim();
-    let txt = `${total.toLocaleString()} announcement${total === 1 ? '' : 's'} in the last ${days} day${days === '1' ? '' : 's'}`;
+    let rangeText;
+    if (isCustomRange()) {
+        const from = document.getElementById('fromDate').value;
+        const to = document.getElementById('toDate').value;
+        if (from && to) {
+            rangeText = `between ${formatDateShort(from)} and ${formatDateShort(to)}`;
+        } else {
+            rangeText = 'in the last 90 days';
+        }
+    } else {
+        const days = document.getElementById('daysFilter').value;
+        rangeText = `in the last ${days} day${days === '1' ? '' : 's'}`;
+    }
+    let txt = `${total.toLocaleString()} announcement${total === 1 ? '' : 's'} ${rangeText}`;
     if (symbol) txt += ` for symbols matching "${symbol}"`;
     document.getElementById('summaryCaption').textContent = txt + '.';
 }
 
+// ── Render summary table ──
 function renderSummary() {
     const sorted = [...summaryData].sort((a, b) => {
         const dir = sortState.direction;
@@ -547,12 +667,7 @@ function renderSummary() {
             const newCell = row.new > 0
                 ? `<span class="new-badge">${row.new}</span>`
                 : `<span class="new-zero">0</span>`;
-            const href = `/announcements/topic/${encodeURIComponent(row.topic)}`
-                       + `?days=${document.getElementById('daysFilter').value}`
-                       + `&impact=${encodeURIComponent(document.getElementById('impactFilter').value)}`
-                       + (document.getElementById('symbolFilter').value.trim()
-                          ? `&symbol=${encodeURIComponent(document.getElementById('symbolFilter').value.trim())}`
-                          : '');
+            const href = buildTopicHref(row.topic);
             return `
                 <tr>
                     <td class="col-push">
@@ -568,7 +683,6 @@ function renderSummary() {
         }).join('');
     }
 
-    // Footer totals
     const totalNew = sorted.reduce((s, r) => s + (r.new || 0), 0);
     const totalAll = sorted.reduce((s, r) => s + (r.total || 0), 0);
     document.getElementById('summaryFoot').innerHTML = `
@@ -580,17 +694,15 @@ function renderSummary() {
             <td class="col-latest"></td>
         </tr>`;
 
-    // Bind checkbox changes
     document.querySelectorAll('.push-toggle').forEach(cb => {
         cb.addEventListener('change', onToggle);
     });
-
-    // Bind topic link clicks — mark viewed, then navigate
     document.querySelectorAll('.topic-link').forEach(a => {
         a.addEventListener('click', onTopicClick);
     });
 }
 
+// ── Checkbox toggle ──
 async function onToggle(e) {
     const topic = e.target.dataset.topic;
     const nowChecked = e.target.checked;
@@ -606,7 +718,6 @@ async function onToggle(e) {
         if (!r.ok) throw new Error('save failed');
         showToast(nowChecked ? `Push enabled: ${topic}` : `Push disabled: ${topic}`);
     } catch (err) {
-        // Revert on failure
         if (nowChecked) tickedTopics.delete(topic);
         else tickedTopics.add(topic);
         e.target.checked = !nowChecked;
@@ -614,16 +725,16 @@ async function onToggle(e) {
     }
 }
 
+// ── Topic click: mark viewed, then navigate ──
 function onTopicClick(e) {
     e.preventDefault();
     const topic = this.dataset.topic;
     const href = this.href;
-    // Mark viewed (fire-and-forget), then navigate
     fetch(`/api/announcements/mark_viewed/${encodeURIComponent(topic)}`, { method: 'POST' })
         .finally(() => { window.location.href = href; });
 }
 
-// ── Sorting ──
+// ── Sort ──
 function updateSortIcons() {
     document.querySelectorAll('th.sortable').forEach(th => {
         const col = th.dataset.sort;
@@ -653,15 +764,44 @@ document.querySelectorAll('th.sortable').forEach(th => {
     });
 });
 
-// ── Filters ──
-document.getElementById('daysFilter').addEventListener('change', () => {
+// Restore sort from URL
+(function restoreSort() {
+    const p = new URLSearchParams(location.search);
+    const s = p.get('sort');
+    const d = p.get('dir');
+    if (s && ['topic', 'new', 'total', 'latest'].includes(s)) {
+        sortState.column = s;
+        sortState.direction = d === 'desc' ? -1 : 1;
+    }
+})();
+
+// ── Filter handlers ──
+document.getElementById('daysFilter').addEventListener('change', function () {
+    if (this.value === 'custom') {
+        document.getElementById('customRangeRow').classList.add('show');
+        // Pre-fill dates if empty
+        const fromEl = document.getElementById('fromDate');
+        const toEl = document.getElementById('toDate');
+        if (!fromEl.value) {
+            const d = new Date();
+            d.setDate(d.getDate() - 90);
+            fromEl.value = d.toISOString().slice(0, 10);
+        }
+        if (!toEl.value) {
+            toEl.value = new Date().toISOString().slice(0, 10);
+        }
+    } else {
+        document.getElementById('customRangeRow').classList.remove('show');
+    }
     saveStateToUrl();
     loadSummary();
 });
+
 document.getElementById('impactFilter').addEventListener('change', () => {
     saveStateToUrl();
     loadSummary();
 });
+
 let symbolDebounce = null;
 document.getElementById('symbolFilter').addEventListener('input', () => {
     clearTimeout(symbolDebounce);
@@ -671,7 +811,18 @@ document.getElementById('symbolFilter').addEventListener('input', () => {
     }, 350);
 });
 
-// ── Refresh button ──
+let dateDebounce = null;
+['fromDate', 'toDate'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+        clearTimeout(dateDebounce);
+        dateDebounce = setTimeout(() => {
+            saveStateToUrl();
+            loadSummary();
+        }, 250);
+    });
+});
+
+// ── Refresh ──
 document.getElementById('refreshBtn').addEventListener('click', async function () {
     const btn = this;
     btn.disabled = true;
@@ -679,7 +830,7 @@ document.getElementById('refreshBtn').addEventListener('click', async function (
     try {
         const r = await fetch('/api/announcements/refresh', { method: 'POST' });
         const data = await r.json();
-        const msg = `Fetched ${data.fetched}, new ${data.new}`;
+        const msg = `Mode: ${data.mode} · Fetched ${data.fetched} · New ${data.new}`;
         showToast(msg);
         await loadSummary();
     } catch (e) {

@@ -5,7 +5,8 @@ Final wiring:
   • OTP-over-Telegram auth
   • GitHub cache-branch persistence
   • Announcement routes rendered via templates
-  • Fetcher thread
+  • Fetcher thread with chunked backfill
+  • API endpoints accept either ?days=N or ?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD
 """
 
 import os
@@ -412,7 +413,7 @@ def root():
 
 
 # ═════════════════════════════════════════════════════════════════
-#  ROUTES — PAGES  (now rendering the real templates)
+#  ROUTES — PAGES
 # ═════════════════════════════════════════════════════════════════
 
 @app.route("/announcements")
@@ -441,18 +442,32 @@ def _int_arg(name, default):
         return default
 
 
+def _date_args():
+    """Read optional from_date / to_date query params."""
+    return (
+        (request.args.get("from_date") or "").strip(),
+        (request.args.get("to_date") or "").strip(),
+    )
+
+
 @app.route("/api/announcements/summary")
 def api_summary():
     days = _int_arg("days", config.DEFAULT_RANGE_DAYS)
     symbol = (request.args.get("symbol") or "").strip()
     impact = (request.args.get("impact") or "All").strip()
+    from_date, to_date = _date_args()
+
     rows = announcements.query_summary(
         days=days,
         symbol=symbol or None,
         impact=impact if impact != "All" else None,
+        from_date=from_date or None,
+        to_date=to_date or None,
     )
     return jsonify({
         "days": days,
+        "from_date": from_date,
+        "to_date": to_date,
         "symbol": symbol,
         "impact": impact,
         "rows": rows,
@@ -469,6 +484,7 @@ def api_topic(topic):
     impact = (request.args.get("impact") or "All").strip()
     limit = _int_arg("limit", config.MAX_ROWS_PER_PAGE)
     offset = _int_arg("offset", 0)
+    from_date, to_date = _date_args()
 
     rows = announcements.query_topic(
         topic=topic,
@@ -477,10 +493,14 @@ def api_topic(topic):
         impact=impact if impact != "All" else None,
         limit=limit,
         offset=offset,
+        from_date=from_date or None,
+        to_date=to_date or None,
     )
     return jsonify({
         "topic": topic,
         "days": days,
+        "from_date": from_date,
+        "to_date": to_date,
         "count": len(rows),
         "offset": offset,
         "limit": limit,
@@ -499,7 +519,14 @@ def api_mark_viewed(topic):
 
 @app.route("/api/announcements/refresh", methods=["POST"])
 def api_refresh():
-    result = announcements.run_fetch_cycle()
+    """
+    Manual refresh. Query param ?mode=backfill forces a full backfill even
+    if the DB looks healthy. Default mode is auto.
+    """
+    mode = (request.args.get("mode") or "").strip().lower()
+    force = (mode == "backfill")
+
+    result = announcements.run_fetch_cycle(force_backfill=force)
     _stamp_tick()
 
     notify_result = {"sent": 0, "skipped": 0, "failed": 0}
@@ -511,6 +538,7 @@ def api_refresh():
 
     return jsonify({
         "status": "ok",
+        "mode": result.get("mode", "default"),
         "fetched": result["fetched"],
         "new": result["new"],
         "notify": notify_result,
@@ -547,6 +575,10 @@ def api_notify_settings_set():
 # ═════════════════════════════════════════════════════════════════
 
 def fetcher_thread():
+    """
+    First cycle performs a backfill if needed (fresh DB or missing history).
+    Every subsequent cycle is a lightweight daily fetch.
+    """
     time.sleep(10)
     logger.info(f"Fetcher thread started — interval {config.POLL_INTERVAL_SECONDS}s")
 
@@ -558,12 +590,16 @@ def fetcher_thread():
             if result["new_items"]:
                 notify_result = telegram_notify.notify_items(result["new_items"])
                 logger.info(
-                    f"Cycle: fetched={result['fetched']} "
+                    f"Cycle ({result.get('mode','default')}): "
+                    f"fetched={result['fetched']} "
                     f"new={result['new']} "
                     f"notify={notify_result}"
                 )
             else:
-                logger.info(f"Cycle: fetched={result['fetched']} new=0")
+                logger.info(
+                    f"Cycle ({result.get('mode','default')}): "
+                    f"fetched={result['fetched']} new=0"
+                )
 
             if result["new"]:
                 push_announcements()

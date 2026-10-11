@@ -149,10 +149,10 @@
             color: var(--text-muted);
         }
         .info-bar .info-item { display: flex; gap: 6px; align-items: baseline; }
-        .info-bar .info-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.7; }
+        .info-bar .info-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.75; }
         .info-bar .info-value { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
 
-        /* ── Filter bar ── */
+        /* ── Filters ── */
         .form-label {
             font-size: 0.7rem;
             margin-bottom: 3px;
@@ -179,6 +179,9 @@
             outline: none;
         }
         .form-control-sm::placeholder { color: var(--text-muted); opacity: 0.7; }
+
+        .custom-range-row { display: none; }
+        .custom-range-row.show { display: flex; }
 
         /* ── List container ── */
         .list-scroll {
@@ -261,7 +264,7 @@
             margin-left: 6px;
         }
 
-        /* Time chip on the right */
+        /* Time chip */
         .ann-time {
             flex: 0 0 70px;
             padding: 12px 14px 12px 6px;
@@ -362,6 +365,7 @@
                     <option value="90" selected>90 days</option>
                     <option value="180">6 months</option>
                     <option value="365">1 year</option>
+                    <option value="custom">Custom…</option>
                 </select>
             </div>
             <div class="col-6 col-md-2">
@@ -376,6 +380,18 @@
             <div class="col-12 col-md-3">
                 <label class="form-label" for="symbolFilter">Symbol</label>
                 <input type="text" id="symbolFilter" class="form-control-sm" placeholder="Optional" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Custom date range sub-row -->
+        <div class="row g-2 custom-range-row" id="customRangeRow" style="margin-top: 8px;">
+            <div class="col-6 col-md-2">
+                <label class="form-label" for="fromDate">From</label>
+                <input type="date" id="fromDate" class="form-control-sm">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label" for="toDate">To</label>
+                <input type="date" id="toDate" class="form-control-sm">
             </div>
         </div>
     </div>
@@ -409,7 +425,7 @@ window.fetch = function (...args) {
     });
 };
 
-// ── Theme toggle ──
+// ── Theme ──
 const themeToggle = document.getElementById('themeToggle');
 function applyTheme(theme) {
     if (theme === 'dark') {
@@ -445,33 +461,67 @@ document.getElementById('logoutBtn').addEventListener('click', function () {
         .finally(() => { window.location.href = '/login'; });
 });
 
-// ── Load state from URL ──
+// ── URL state ──
+function isCustomRange() {
+    return document.getElementById('daysFilter').value === 'custom';
+}
+
+function getRangeParams() {
+    if (isCustomRange()) {
+        const from = document.getElementById('fromDate').value;
+        const to = document.getElementById('toDate').value;
+        if (from && to) return { from_date: from, to_date: to };
+        return { days: '90' };
+    }
+    return { days: document.getElementById('daysFilter').value };
+}
+
+function getFilterParams() {
+    return {
+        impact: document.getElementById('impactFilter').value,
+        symbol: document.getElementById('symbolFilter').value.trim(),
+    };
+}
+
 (function loadFromUrl() {
     const p = new URLSearchParams(location.search);
     const d = p.get('days');
+    const fd = p.get('from_date');
+    const td = p.get('to_date');
     const i = p.get('impact');
     const s = p.get('symbol');
-    if (d) document.getElementById('daysFilter').value = d;
+    if (fd && td) {
+        document.getElementById('daysFilter').value = 'custom';
+        document.getElementById('fromDate').value = fd;
+        document.getElementById('toDate').value = td;
+        document.getElementById('customRangeRow').classList.add('show');
+    } else if (d) {
+        document.getElementById('daysFilter').value = d;
+    }
     if (i) document.getElementById('impactFilter').value = i;
     if (s) document.getElementById('symbolFilter').value = s;
 })();
 
-// ── Save state to URL ──
 function saveStateToUrl() {
     const p = new URLSearchParams();
-    p.set('days', document.getElementById('daysFilter').value);
-    p.set('impact', document.getElementById('impactFilter').value);
-    const s = document.getElementById('symbolFilter').value.trim();
-    if (s) p.set('symbol', s);
+    const range = getRangeParams();
+    if (range.from_date) {
+        p.set('from_date', range.from_date);
+        p.set('to_date', range.to_date);
+    } else {
+        p.set('days', range.days);
+    }
+    const f = getFilterParams();
+    if (f.impact && f.impact !== 'All') p.set('impact', f.impact);
+    if (f.symbol) p.set('symbol', f.symbol);
     history.replaceState(null, '', location.pathname + '?' + p.toString());
 }
 
-// ── Date formatting ──
+// ── Date helpers ──
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 function formatDateGroupKey(dateStr) {
-    // '2026-10-11' → '11 Oct 2026 (Sat)'
     if (!dateStr) return '';
     try {
         const [y, mo, d] = dateStr.split('-').map(n => parseInt(n));
@@ -481,20 +531,32 @@ function formatDateGroupKey(dateStr) {
 }
 
 function formatTimeOnly(dateTimeStr) {
-    // '2026-10-11 14:30:00' → '14:30'
     if (!dateTimeStr) return '';
     try {
-        const [_, time] = dateTimeStr.split(' ');
-        return time ? time.slice(0, 5) : '';
+        const parts = dateTimeStr.split(' ');
+        return parts[1] ? parts[1].slice(0, 5) : '';
     } catch (e) { return ''; }
 }
 
-function formatRangeLabel(days) {
-    const d = parseInt(days);
+function formatDateShort(isoDate) {
+    if (!isoDate) return '';
+    try {
+        const [y, mo, d] = isoDate.split('-');
+        return `${parseInt(d)} ${MONTHS[parseInt(mo) - 1]} ${y}`;
+    } catch (e) { return isoDate; }
+}
+
+function rangeLabel() {
+    if (isCustomRange()) {
+        const from = document.getElementById('fromDate').value;
+        const to = document.getElementById('toDate').value;
+        if (from && to) return `${formatDateShort(from)} – ${formatDateShort(to)}`;
+        return '90 days';
+    }
+    const days = parseInt(document.getElementById('daysFilter').value);
     const end = new Date();
-    const start = new Date(Date.now() - d * 86400000);
-    const fmt = (dt) => `${dt.getDate()} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
-    return `${fmt(start)} – ${fmt(end)}`;
+    const start = new Date(Date.now() - days * 86400000);
+    return `${formatDateShort(start.toISOString().slice(0,10))} – ${formatDateShort(end.toISOString().slice(0,10))}`;
 }
 
 // ── Escape HTML ──
@@ -514,7 +576,6 @@ function renderList(rows) {
         return;
     }
 
-    // Group by date (YYYY-MM-DD)
     const groups = new Map();
     for (const r of rows) {
         const day = (r.announced_at || '').split(' ')[0] || 'unknown';
@@ -552,22 +613,36 @@ function renderList(rows) {
     container.innerHTML = html;
 }
 
-// ── Load data ──
+// ── Load list ──
 async function loadList() {
-    const days = document.getElementById('daysFilter').value;
-    const impact = document.getElementById('impactFilter').value;
-    const symbol = document.getElementById('symbolFilter').value.trim();
+    const range = getRangeParams();
+    const f = getFilterParams();
 
-    document.getElementById('rangeValue').textContent = formatRangeLabel(days);
-    document.getElementById('backLink').href =
-        '/announcements?days=' + days
-        + '&impact=' + encodeURIComponent(impact)
-        + (symbol ? '&symbol=' + encodeURIComponent(symbol) : '');
+    document.getElementById('rangeValue').textContent = rangeLabel();
 
-    const url = `/api/announcements/topic/${encodeURIComponent(TOPIC)}`
-              + `?days=${days}`
-              + `&impact=${encodeURIComponent(impact)}`
-              + (symbol ? `&symbol=${encodeURIComponent(symbol)}` : '');
+    // Back link carries the same range and filters
+    const backParams = new URLSearchParams();
+    if (range.from_date) {
+        backParams.set('from_date', range.from_date);
+        backParams.set('to_date', range.to_date);
+    } else {
+        backParams.set('days', range.days);
+    }
+    if (f.impact && f.impact !== 'All') backParams.set('impact', f.impact);
+    if (f.symbol) backParams.set('symbol', f.symbol);
+    document.getElementById('backLink').href = '/announcements?' + backParams.toString();
+
+    const params = new URLSearchParams();
+    if (range.from_date) {
+        params.set('from_date', range.from_date);
+        params.set('to_date', range.to_date);
+    } else {
+        params.set('days', range.days);
+    }
+    params.set('impact', f.impact);
+    if (f.symbol) params.set('symbol', f.symbol);
+
+    const url = `/api/announcements/topic/${encodeURIComponent(TOPIC)}?${params.toString()}`;
 
     try {
         const r = await fetch(url);
@@ -577,8 +652,9 @@ async function loadList() {
             return;
         }
         const data = await r.json();
-        document.getElementById('totalValue').textContent = (data.rows || []).length.toLocaleString();
-        document.getElementById('showingValue').textContent = (data.rows || []).length.toLocaleString();
+        const n = (data.rows || []).length;
+        document.getElementById('totalValue').textContent = n.toLocaleString();
+        document.getElementById('showingValue').textContent = n.toLocaleString();
         renderList(data.rows || []);
     } catch (e) {
         document.getElementById('listScroll').innerHTML =
@@ -586,15 +662,32 @@ async function loadList() {
     }
 }
 
-// ── Filters ──
-document.getElementById('daysFilter').addEventListener('change', () => {
+// ── Filter handlers ──
+document.getElementById('daysFilter').addEventListener('change', function () {
+    if (this.value === 'custom') {
+        document.getElementById('customRangeRow').classList.add('show');
+        const fromEl = document.getElementById('fromDate');
+        const toEl = document.getElementById('toDate');
+        if (!fromEl.value) {
+            const d = new Date();
+            d.setDate(d.getDate() - 90);
+            fromEl.value = d.toISOString().slice(0, 10);
+        }
+        if (!toEl.value) {
+            toEl.value = new Date().toISOString().slice(0, 10);
+        }
+    } else {
+        document.getElementById('customRangeRow').classList.remove('show');
+    }
     saveStateToUrl();
     loadList();
 });
+
 document.getElementById('impactFilter').addEventListener('change', () => {
     saveStateToUrl();
     loadList();
 });
+
 let symbolDebounce = null;
 document.getElementById('symbolFilter').addEventListener('input', () => {
     clearTimeout(symbolDebounce);
@@ -602,6 +695,17 @@ document.getElementById('symbolFilter').addEventListener('input', () => {
         saveStateToUrl();
         loadList();
     }, 350);
+});
+
+let dateDebounce = null;
+['fromDate', 'toDate'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+        clearTimeout(dateDebounce);
+        dateDebounce = setTimeout(() => {
+            saveStateToUrl();
+            loadList();
+        }, 250);
+    });
 });
 
 // ── Boot ──

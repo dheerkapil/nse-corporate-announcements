@@ -10,10 +10,20 @@ NSE_SESSION_TTL_SECONDS = 360
 NSE_REQUEST_TIMEOUT = 15
 NSE_COOKIE_WARMUP_TIMEOUT = 10
 
+# Backfill: NSE's announcements endpoint caps results per request, so we
+# page over the target window in weekly chunks with a polite pause between
+# requests to avoid rate limiting.
+NSE_BACKFILL_CHUNK_DAYS = 7
+NSE_BACKFILL_CHUNK_DELAY = 1.5
+
 # ── Retention ────────────────────────────────────────────
+# RETENTION_DAYS: how long the DB keeps rows before pruning.
+# BACKFILL_DAYS:  how far back a fresh (or partial) DB is backfilled.
+# DEFAULT_RANGE_DAYS: what the summary page shows on first load.
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "365"))
+BACKFILL_DAYS = int(os.environ.get("BACKFILL_DAYS", "90"))
 DEFAULT_RANGE_DAYS = int(os.environ.get("DEFAULT_RANGE_DAYS", "90"))
-MAX_ROWS_PER_PAGE = 200
+MAX_ROWS_PER_PAGE = 1000
 
 # ── Database ─────────────────────────────────────────────
 DB_FILE = os.environ.get("DB_FILE", "announcements.db")
@@ -53,20 +63,29 @@ USER_AGENT = (
 )
 
 # ── Topic taxonomy ───────────────────────────────────────
+# Alphabetical so the summary table's default sort (Topic A→Z) needs no
+# client-side reordering.
 TOPICS = [
     "Acquisition",
     "AGM",
+    "Appointment",
     "Board Meeting",
     "Bonus Issue",
     "Buyback",
+    "Capacity Addition",
     "Capex",
+    "Credit Rating",
     "Demerger",
     "Dividend",
     "Earnings",
+    "Investor Communication",
+    "Newspaper Publication",
     "Order Win",
     "Other",
+    "Press Release",
     "Rights Issue",
+    "Shareholding",
     "Tax/Regulatory",
 ]
 
-DEFAULT_TICKED_TOPICS = []   # nothing ticked on first deploy
+DEFAULT_TICKED_TOPICS = []
