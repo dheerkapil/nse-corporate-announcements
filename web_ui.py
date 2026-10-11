@@ -1,13 +1,11 @@
 """
 web_ui.py — Flask application entry point.
 
-Step 9 scope:
-  • GitHub cache-branch persistence (push + restore)
-  • Startup restore thread
-  • Three backed-up files:
-      - announcements_backup.json      (from config.GITHUB_ANN_FILE)
-      - notify_settings_backup.json    (from config.GITHUB_SETTINGS_FILE)
-      - topic_views_backup.json        (constant, defined below)
+Final wiring:
+  • OTP-over-Telegram auth
+  • GitHub cache-branch persistence
+  • Announcement routes rendered via templates
+  • Fetcher thread
 """
 
 import os
@@ -63,7 +61,7 @@ def _get_last_tick():
 
 
 # ═════════════════════════════════════════════════════════════════
-#  OTP STATE  (per-IP, persisted to a JSON file)
+#  OTP STATE
 # ═════════════════════════════════════════════════════════════════
 
 _otp_lock = threading.Lock()
@@ -175,10 +173,6 @@ def _gh_raw_headers():
 
 
 def gh_get(filename):
-    """
-    Fetch a file from the cache branch. Returns the raw text, or None.
-    Uses the raw media type so files >1 MB work without base64 bloat.
-    """
     if not config.GITHUB_BACKUP_TOKEN:
         return None
     url = f"{GH_API}/repos/{config.GITHUB_REPO}/contents/{filename}"
@@ -195,10 +189,6 @@ def gh_get(filename):
 
 
 def gh_put(filename, content, message):
-    """
-    Create or update a file on the cache branch.
-    Returns True on success, False otherwise.
-    """
     if not config.GITHUB_BACKUP_TOKEN:
         return False
 
@@ -236,8 +226,6 @@ def gh_put(filename, content, message):
         return False
 
 
-# ── Push helpers (fire-and-forget threads) ───────────────────────
-
 def push_announcements():
     rows = announcements.get_all_for_backup()
     if not rows:
@@ -262,11 +250,8 @@ def push_settings():
 
 
 def _bg(fn):
-    """Run a push function in a daemon thread — never block a request."""
     threading.Thread(target=fn, daemon=True).start()
 
-
-# ── Restore helpers (called once at startup) ─────────────────────
 
 def restore_announcements():
     content = gh_get(GH_ANN_FILE)
@@ -427,66 +412,19 @@ def root():
 
 
 # ═════════════════════════════════════════════════════════════════
-#  ROUTES — PAGES  (placeholders until Steps 10–12)
+#  ROUTES — PAGES  (now rendering the real templates)
 # ═════════════════════════════════════════════════════════════════
-
-_PLACEHOLDER_STYLE = """
-<style>
-    body { font-family: -apple-system, Segoe UI, Roboto, sans-serif;
-           padding: 40px; background: #f8f9fa; color: #202124; }
-    h2   { margin: 0 0 8px 0; }
-    p    { color: #5f6368; margin: 0 0 16px 0; }
-    a    { color: #1a73e8; text-decoration: none; margin-right: 16px; }
-    a:hover { text-decoration: underline; }
-    code { background: #f1f3f4; padding: 2px 6px; border-radius: 4px; }
-</style>
-"""
-
-
-def _placeholder(body_html):
-    return (
-        f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        f"<title>nse-corporate-announcements</title>{_PLACEHOLDER_STYLE}"
-        f"</head><body>{body_html}</body></html>"
-    )
-
 
 @app.route("/announcements")
 def announcements_page():
-    body = (
-        "<h2>Corporate Announcements</h2>"
-        "<p>Summary page placeholder. The real template arrives in Step 11.</p>"
-        "<p>"
-        "<a href='/announcements/topic/Order%20Win'>Sample topic: Order Win</a>"
-        "<a href='/announcements/topic/Dividend'>Sample topic: Dividend</a>"
-        "</p>"
-        "<p>JSON APIs are live:"
-        " <code>/api/announcements/summary</code>"
-        " <code>/api/announcements/topic/&lt;topic&gt;</code>"
-        " <code>/api/notify_settings</code>"
-        "</p>"
-        "<p><a href='#' onclick=\"event.preventDefault();"
-        "fetch('/api/logout',{method:'POST'})"
-        ".finally(()=>location.href='/login');\">Log out</a></p>"
-    )
-    return _placeholder(body)
+    return render_template("announcements.html")
 
 
 @app.route("/announcements/topic/<path:topic>")
 def topic_page(topic):
     if topic not in config.TOPICS:
-        return _placeholder(
-            f"<h2>Unknown topic</h2>"
-            f"<p><code>{topic}</code> is not one of the configured topics.</p>"
-            f"<p><a href='/announcements'>Back to summary</a></p>"
-        ), 404
-    body = (
-        f"<h2>{topic}</h2>"
-        f"<p>Topic detail placeholder. The real template arrives in Step 12.</p>"
-        f"<p><a href='/announcements'>Back to summary</a></p>"
-        f"<p>JSON API: <code>/api/announcements/topic/{topic}</code></p>"
-    )
-    return _placeholder(body)
+        return redirect("/announcements")
+    return render_template("topic.html")
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -609,13 +547,6 @@ def api_notify_settings_set():
 # ═════════════════════════════════════════════════════════════════
 
 def fetcher_thread():
-    """
-    Every POLL_INTERVAL_SECONDS:
-      1. Fetch / save / prune
-      2. Stamp _last_tick for health
-      3. Send Telegram notifications for new items with ticked topics
-      4. Push the announcements table to GitHub if anything was new
-    """
     time.sleep(10)
     logger.info(f"Fetcher thread started — interval {config.POLL_INTERVAL_SECONDS}s")
 
@@ -644,10 +575,6 @@ def fetcher_thread():
 
 
 def startup_thread():
-    """
-    Runs once, briefly after boot. Restores all three backups from
-    the GitHub cache branch before the fetcher starts doing real work.
-    """
     time.sleep(3)
     logger.info("Startup restore beginning")
     try:
