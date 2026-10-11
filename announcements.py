@@ -143,7 +143,8 @@ _TOPIC_RULES = [
                               r"|\bpromoter\s+(?:holding|stake|pledge)\b"
                               r"|\besop\b|\bsweat\s+equity\b"
                               r"|\bconversion\s+of\s+(?:warrants|debentures)\b"
-                              r"|\bdisclosure\s+under\b"),
+                              r"|\bdisclosure\s+under\b"
+                              r"|\boptions?\s+to\s+purchase\b"),
 
     # ── Management / governance ──────────────────────────────────
     ("Appointment",           r"\bappoint(?:ment|ed|ing)?\b"
@@ -163,6 +164,7 @@ _TOPIC_RULES = [
     # ── Capacity and capex ───────────────────────────────────────
     ("Capacity Addition",     r"\b(?:capacity|production\s+capacity)\s+"
                               r"(?:expansion|addition|increase|enhancement)\b"
+                              r"|\bcapacity\s+addition\b"
                               r"|\bcommission(?:ing|ed)?\b"
                               r"|\bnew\s+(?:plant|facility|unit|manufacturing)\b"
                               r"|\bgreenfield\b|\bbrownfield\b"
@@ -603,6 +605,24 @@ def query_topic(topic, days=None, symbol=None, impact=None,
     return [dict(r) for r in rows]
 
 
+def count_topic(topic, days=None, symbol=None, impact=None,
+                from_date=None, to_date=None):
+    """Return the true total number of rows for a topic (ignoring page limit)."""
+    from_d, to_d = _resolve_range(days=days, from_date=from_date, to_date=to_date)
+    where = ["topic = ?", "announced_at >= ?", "announced_at <= ?"]
+    params = [topic, from_d, to_d + " 23:59:59"]
+    if symbol:
+        where.append("UPPER(symbol) LIKE ?")
+        params.append(f"%{symbol.upper()}%")
+    if impact and impact != "All":
+        where.append("impact = ?")
+        params.append(impact)
+    sql = f"SELECT COUNT(*) AS n FROM announcements WHERE {' AND '.join(where)}"
+    with db() as c:
+        row = c.execute(sql, params).fetchone()
+    return row["n"] if row else 0
+
+
 # ═════════════════════════════════════════════════════════════════
 #  UNREAD TRACKING
 # ═════════════════════════════════════════════════════════════════
@@ -691,8 +711,6 @@ def run_fetch_cycle(force_backfill=False):
             mode = "backfill"
             result = run_backfill()
             prune_old()
-            # Only return today's fresh rows for notification —
-            # never spam Telegram with 90 days of history.
             today_str = _now().strftime("%Y-%m-%d")
             with db() as c:
                 rows = c.execute("""
@@ -742,29 +760,44 @@ def get_all_for_backup():
 
 
 def restore_from_backup(items):
+    """
+    Restore rows from backup, re-classifying each subject with the
+    current classifier. This makes taxonomy changes retroactive without
+    requiring a fresh fetch.
+    """
     if not items:
         return 0
     inserted = 0
+    updated = 0
     with db() as c:
         for it in items:
             try:
+                subject = it.get("subject", "")
+                topic = classify_topic(subject)
+                impact = classify_impact(subject)
                 cur = c.execute("""
-                    INSERT OR IGNORE INTO announcements
+                    INSERT INTO announcements
                         (symbol, company, subject, topic, impact, announced_at, attachment)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol, subject, announced_at)
+                    DO UPDATE SET topic = excluded.topic,
+                                  impact = excluded.impact
                 """, (
                     it.get("symbol", ""),
                     it.get("company", ""),
-                    it.get("subject", ""),
-                    it.get("topic", "Other"),
-                    it.get("impact", "neutral"),
+                    subject,
+                    topic,
+                    impact,
                     it.get("announced_at", ""),
                     it.get("attachment", ""),
                 ))
-                inserted += cur.rowcount
+                if cur.rowcount == 1:
+                    inserted += 1
+                else:
+                    updated += 1
             except Exception:
                 continue
-    logger.info(f"Restored {inserted} announcements from backup")
+    logger.info(f"Restored {inserted} new, {updated} updated from backup")
     return inserted
 
 
@@ -791,3 +824,28 @@ def restore_views_from_backup(items):
                 continue
     logger.info(f"Restored {restored} topic view records")
     return restored
+
+
+def reclassify_all():
+    """
+    One-shot: re-classify every row currently in the DB using the
+    current classifier. Called at startup after a restore so that any
+    taxonomy changes take effect immediately.
+    """
+    updated = 0
+    with db() as c:
+        rows = c.execute("SELECT id, subject, topic, impact FROM announcements").fetchall()
+        for r in rows:
+            new_topic = classify_topic(r["subject"])
+            new_impact = classify_impact(r["subject"])
+            if new_topic != r["topic"] or new_impact != r["impact"]:
+                c.execute(
+                    "UPDATE announcements SET topic = ?, impact = ? WHERE id = ?",
+                    (new_topic, new_impact, r["id"])
+                )
+                updated += 1
+    if updated:
+        logger.info(f"Reclassified {updated} rows with current rules")
+    else:
+        logger.info("Reclassify: no rows needed updating")
+    return updated

@@ -1,12 +1,5 @@
 """
 web_ui.py — Flask application entry point.
-
-Final wiring:
-  • OTP-over-Telegram auth
-  • GitHub cache-branch persistence
-  • Announcement routes rendered via templates
-  • Fetcher thread with chunked backfill
-  • API endpoints accept either ?days=N or ?from_date=YYYY-MM-DD&to_date=YYYY-MM-DD
 """
 
 import os
@@ -18,7 +11,6 @@ import hmac
 import hashlib
 import logging
 import threading
-from datetime import datetime
 
 import requests
 from flask import (
@@ -38,14 +30,12 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# ── GitHub file names on the cache branch ────────────────────────
 GH_ANN_FILE = config.GITHUB_ANN_FILE
 GH_SETTINGS_FILE = config.GITHUB_SETTINGS_FILE
 GH_VIEWS_FILE = "topic_views_backup.json"
 
 GH_API = "https://api.github.com"
 
-# Updated by the fetcher thread each cycle. Used by /api/health.
 _last_tick = time.time()
 _last_tick_lock = threading.Lock()
 
@@ -154,7 +144,7 @@ def _gate():
 
 
 # ═════════════════════════════════════════════════════════════════
-#  GITHUB  (cache-branch persistence)
+#  GITHUB
 # ═════════════════════════════════════════════════════════════════
 
 def _gh_headers():
@@ -217,7 +207,7 @@ def gh_put(filename, content, message):
         body["sha"] = sha
 
     try:
-        r = requests.put(url, headers=_gh_headers(), json=body, timeout=60)
+        r = requests.put(url, headers=_gh_headers(), json=body, timeout=90)
         if r.status_code in (200, 201):
             return True
         logger.warning(f"gh_put({filename}): HTTP {r.status_code} {r.text[:120]}")
@@ -265,7 +255,7 @@ def restore_announcements():
             logger.warning("Announcements restore: invalid payload")
             return 0
         n = announcements.restore_from_backup(data)
-        logger.info(f"Announcements restore: {n} rows inserted")
+        logger.info(f"Announcements restore complete")
         return n
     except Exception as e:
         logger.error(f"Announcements restore failed: {e}")
@@ -443,7 +433,6 @@ def _int_arg(name, default):
 
 
 def _date_args():
-    """Read optional from_date / to_date query params."""
     return (
         (request.args.get("from_date") or "").strip(),
         (request.args.get("to_date") or "").strip(),
@@ -496,11 +485,20 @@ def api_topic(topic):
         from_date=from_date or None,
         to_date=to_date or None,
     )
+    total = announcements.count_topic(
+        topic=topic,
+        days=days,
+        symbol=symbol or None,
+        impact=impact if impact != "All" else None,
+        from_date=from_date or None,
+        to_date=to_date or None,
+    )
     return jsonify({
         "topic": topic,
         "days": days,
         "from_date": from_date,
         "to_date": to_date,
+        "total": total,
         "count": len(rows),
         "offset": offset,
         "limit": limit,
@@ -519,10 +517,6 @@ def api_mark_viewed(topic):
 
 @app.route("/api/announcements/refresh", methods=["POST"])
 def api_refresh():
-    """
-    Manual refresh. Query param ?mode=backfill forces a full backfill even
-    if the DB looks healthy. Default mode is auto.
-    """
     mode = (request.args.get("mode") or "").strip().lower()
     force = (mode == "backfill")
 
@@ -575,10 +569,6 @@ def api_notify_settings_set():
 # ═════════════════════════════════════════════════════════════════
 
 def fetcher_thread():
-    """
-    First cycle performs a backfill if needed (fresh DB or missing history).
-    Every subsequent cycle is a lightweight daily fetch.
-    """
     time.sleep(10)
     logger.info(f"Fetcher thread started — interval {config.POLL_INTERVAL_SECONDS}s")
 
@@ -617,6 +607,9 @@ def startup_thread():
         restore_settings()
         restore_views()
         restore_announcements()
+        # After restore, re-classify every row with the current taxonomy.
+        # This applies taxonomy changes retroactively without re-fetching.
+        announcements.reclassify_all()
     except Exception as e:
         logger.exception(f"startup restore error: {e}")
     logger.info("Startup restore complete")
@@ -631,10 +624,6 @@ announcements.init_db()
 threading.Thread(target=startup_thread, daemon=True).start()
 threading.Thread(target=fetcher_thread, daemon=True).start()
 
-
-# ═════════════════════════════════════════════════════════════════
-#  LOCAL DEV ENTRY
-# ═════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)

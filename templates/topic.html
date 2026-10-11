@@ -8,43 +8,23 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         :root {
-            --bg: #f8f9fa;
-            --surface: #ffffff;
-            --surface-2: #f1f3f4;
-            --text: #202124;
-            --text-muted: #5f6368;
-            --border: #dadce0;
-            --border-light: #e8eaed;
-            --primary: #1a73e8;
-            --primary-fill: #1a73e8;
-            --primary-text: #ffffff;
-            --success: #1e8e3e;
-            --danger: #d93025;
-            --warning: #b06000;
-            --input-bg: #ffffff;
-            --header-bg: #f1f3f4;
-            --row-hover: #f8f9fa;
+            --bg: #f8f9fa; --surface: #ffffff; --surface-2: #f1f3f4;
+            --text: #202124; --text-muted: #5f6368;
+            --border: #dadce0; --border-light: #e8eaed;
+            --primary: #1a73e8; --primary-fill: #1a73e8; --primary-text: #ffffff;
+            --success: #1e8e3e; --danger: #d93025; --warning: #b06000;
+            --input-bg: #ffffff; --header-bg: #f1f3f4; --row-hover: #f8f9fa;
             --shadow-1: 0 1px 2px rgba(60,64,67,0.1), 0 1px 3px 1px rgba(60,64,67,0.06);
             --shadow-2: 0 1px 3px rgba(60,64,67,0.15), 0 4px 8px 3px rgba(60,64,67,0.08);
             --focus-ring: 0 0 0 3px rgba(26,115,232,0.35);
         }
         body.dark {
-            --bg: #000000;
-            --surface: #121212;
-            --surface-2: #1e1e1e;
-            --text: #e8eaed;
-            --text-muted: #b0b4b8;
-            --border: #3c4043;
-            --border-light: #2a2a2a;
-            --primary: #8ab4f8;
-            --primary-fill: #8ab4f8;
-            --primary-text: #202124;
-            --success: #81c995;
-            --danger: #f28b82;
-            --warning: #fdd663;
-            --input-bg: #1e1e1e;
-            --header-bg: #1e1e1e;
-            --row-hover: #1a1a1a;
+            --bg: #000000; --surface: #121212; --surface-2: #1e1e1e;
+            --text: #e8eaed; --text-muted: #b0b4b8;
+            --border: #3c4043; --border-light: #2a2a2a;
+            --primary: #8ab4f8; --primary-fill: #8ab4f8; --primary-text: #202124;
+            --success: #81c995; --danger: #f28b82; --warning: #fdd663;
+            --input-bg: #1e1e1e; --header-bg: #1e1e1e; --row-hover: #1a1a1a;
             --shadow-1: 0 1px 3px rgba(0,0,0,0.7), 0 1px 2px rgba(0,0,0,0.5);
             --shadow-2: 0 4px 8px rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.5);
             --focus-ring: 0 0 0 3px rgba(138,180,248,0.45);
@@ -55,258 +35,158 @@
             font-family: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
             background-color: var(--bg) !important;
             color: var(--text);
-            margin: 0;
-            padding: 12px;
-            min-height: 100vh;
+            margin: 0; padding: 12px; min-height: 100vh;
             overflow-x: hidden;
             transition: background 0.2s ease, color 0.2s ease;
         }
         .container { max-width: 100%; padding: 0; }
         .card {
-            border-radius: 16px;
-            background: var(--surface);
-            box-shadow: var(--shadow-1);
-            margin-bottom: 12px;
-            padding: 16px;
-            border: none;
-            color: var(--text);
+            border-radius: 16px; background: var(--surface);
+            box-shadow: var(--shadow-1); margin-bottom: 12px;
+            padding: 16px; border: none; color: var(--text);
         }
         .header-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 16px;
-            padding: 0 4px;
-            gap: 8px;
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 16px; padding: 0 4px; gap: 8px;
         }
         .header-title-wrap {
-            display: flex;
-            align-items: baseline;
-            gap: 12px;
-            flex-wrap: wrap;
-            min-width: 0;
+            display: flex; align-items: baseline; gap: 12px;
+            flex-wrap: wrap; min-width: 0;
         }
         .header-row h1 {
-            font-size: 1.4rem;
-            font-weight: 500;
-            margin: 0;
-            color: var(--text);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            font-size: 1.4rem; font-weight: 500; margin: 0; color: var(--text);
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             max-width: 100%;
         }
         .back-link {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 0.85rem;
-            font-weight: 500;
-            white-space: nowrap;
+            color: var(--text-muted); text-decoration: none;
+            font-size: 0.85rem; font-weight: 500; white-space: nowrap;
         }
         .back-link:hover { color: var(--primary); text-decoration: underline; }
         .header-actions { display: flex; gap: 8px; align-items: center; }
         .theme-toggle-btn {
-            width: 44px; height: 44px;
-            border-radius: 50%;
-            border: none;
-            background: var(--surface-2);
-            color: var(--text);
-            font-size: 1rem;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: var(--shadow-1);
-            flex-shrink: 0;
+            width: 44px; height: 44px; border-radius: 50%; border: none;
+            background: var(--surface-2); color: var(--text); font-size: 1rem;
+            display: inline-flex; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: var(--shadow-1); flex-shrink: 0;
             transition: background 0.15s;
         }
         .theme-toggle-btn:hover { background: var(--border); }
-        .theme-toggle-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .header-btn {
-            height: 44px;
-            padding: 0 18px;
-            border-radius: 22px;
-            border: 1px solid var(--border);
-            background: var(--surface);
-            color: var(--text);
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            box-shadow: var(--shadow-1);
-            white-space: nowrap;
+            height: 44px; padding: 0 18px; border-radius: 22px;
+            border: 1px solid var(--border); background: var(--surface);
+            color: var(--text); font-size: 0.85rem; font-weight: 500;
+            cursor: pointer; box-shadow: var(--shadow-1); white-space: nowrap;
             transition: background 0.15s, border-color 0.15s;
         }
         .header-btn:hover { background: var(--surface-2); }
-        .header-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
         .header-btn.logout:hover { border-color: var(--danger); color: var(--danger); }
 
-        /* ── Info bar ── */
         .info-bar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            font-size: 0.85rem;
-            color: var(--text-muted);
+            display: flex; flex-wrap: wrap; gap: 20px;
+            font-size: 0.85rem; color: var(--text-muted);
         }
         .info-bar .info-item { display: flex; gap: 6px; align-items: baseline; }
-        .info-bar .info-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; opacity: 0.75; }
-        .info-bar .info-value { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+        .info-bar .info-label {
+            font-size: 0.7rem; text-transform: uppercase;
+            letter-spacing: 0.4px; opacity: 0.75;
+        }
+        .info-bar .info-value {
+            color: var(--text); font-weight: 500;
+            font-variant-numeric: tabular-nums;
+        }
 
-        /* ── Filters ── */
         .form-label {
-            font-size: 0.7rem;
-            margin-bottom: 3px;
-            font-weight: 500;
-            color: var(--text-muted);
-            letter-spacing: 0.3px;
-            display: block;
-            text-transform: uppercase;
+            font-size: 0.7rem; margin-bottom: 3px; font-weight: 500;
+            color: var(--text-muted); letter-spacing: 0.3px;
+            display: block; text-transform: uppercase;
         }
         .form-control-sm, .form-select-sm {
-            font-size: 0.85rem;
-            padding: 0.4rem 0.6rem;
-            background: var(--input-bg);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            width: 100%;
+            font-size: 0.85rem; padding: 0.4rem 0.6rem;
+            background: var(--input-bg); color: var(--text);
+            border: 1px solid var(--border); border-radius: 8px; width: 100%;
         }
         .form-control-sm:focus, .form-select-sm:focus {
-            background: var(--input-bg);
-            color: var(--text);
-            border-color: var(--primary);
-            box-shadow: var(--focus-ring);
+            background: var(--input-bg); color: var(--text);
+            border-color: var(--primary); box-shadow: var(--focus-ring);
             outline: none;
         }
-        .form-control-sm::placeholder { color: var(--text-muted); opacity: 0.7; }
-
         .custom-range-row { display: none; }
         .custom-range-row.show { display: flex; }
 
-        /* ── List container ── */
         .list-scroll {
-            overflow-y: auto;
-            max-height: 72vh;
-            overflow-x: hidden;
-            border-radius: 12px;
-            border: 1px solid var(--border-light);
+            overflow-y: auto; max-height: 72vh; overflow-x: hidden;
+            border-radius: 12px; border: 1px solid var(--border-light);
         }
-
-        /* ── Date group header ── */
         .date-group {
-            position: sticky;
-            top: 0;
-            z-index: 4;
-            background: var(--header-bg);
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-            padding: 10px 14px;
-            border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 4;
+            background: var(--header-bg); color: var(--text-muted);
+            font-size: 0.72rem; font-weight: 600;
+            letter-spacing: 0.5px; text-transform: uppercase;
+            padding: 10px 14px; border-bottom: 1px solid var(--border);
             border-top: 1px solid var(--border-light);
         }
         .date-group:first-child { border-top: none; }
 
-        /* ── Announcement row ── */
         .ann-row {
-            display: flex;
-            align-items: center;
+            display: flex; align-items: center;
             border-bottom: 1px solid var(--border-light);
-            background: var(--surface);
-            cursor: pointer;
-            text-decoration: none;
-            color: inherit;
-            overflow-x: auto;
-            overflow-y: hidden;
-            scrollbar-width: thin;
-            -webkit-overflow-scrolling: touch;
+            background: var(--surface); cursor: pointer;
+            text-decoration: none; color: inherit;
+            overflow-x: auto; overflow-y: hidden;
+            scrollbar-width: thin; -webkit-overflow-scrolling: touch;
         }
         .ann-row:hover { background: var(--row-hover); }
         .ann-row:focus { outline: none; box-shadow: inset 3px 0 0 var(--primary); }
 
-        /* Sticky symbol cell */
         .ann-symbol {
-            position: sticky;
-            left: 0;
-            z-index: 2;
-            flex: 0 0 140px;
-            padding: 12px 14px;
-            font-weight: 600;
-            font-size: 0.85rem;
+            position: sticky; left: 0; z-index: 2;
+            flex: 0 0 140px; padding: 12px 14px;
+            font-weight: 600; font-size: 0.85rem;
             background: var(--surface);
             border-right: 1px solid var(--border-light);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
             box-shadow: 2px 0 3px -2px rgba(0,0,0,0.15);
         }
         .ann-row:hover > .ann-symbol { background: var(--row-hover); }
-
         .ann-symbol.impact-positive { color: var(--success); }
         .ann-symbol.impact-negative { color: var(--danger); }
         .ann-symbol.impact-neutral  { color: var(--text-muted); }
 
-        /* Subject cell — horizontally scrollable */
         .ann-subject {
-            flex: 1 1 auto;
-            padding: 12px 14px;
-            font-size: 0.85rem;
-            color: var(--text);
-            white-space: nowrap;
-            min-width: 0;
+            flex: 1 1 auto; padding: 12px 14px;
+            font-size: 0.85rem; color: var(--text);
+            white-space: nowrap; min-width: 0;
         }
         .ann-subject .no-attachment {
-            color: var(--text-muted);
-            font-style: italic;
-            font-size: 0.75rem;
-            margin-left: 6px;
+            color: var(--text-muted); font-style: italic;
+            font-size: 0.75rem; margin-left: 6px;
         }
 
-        /* Time chip */
         .ann-time {
-            flex: 0 0 70px;
-            padding: 12px 14px 12px 6px;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            font-variant-numeric: tabular-nums;
-            text-align: right;
+            flex: 0 0 70px; padding: 12px 14px 12px 6px;
+            font-size: 0.75rem; color: var(--text-muted);
+            font-variant-numeric: tabular-nums; text-align: right;
             white-space: nowrap;
         }
 
-        /* Empty state */
         .empty-state {
-            padding: 48px 20px;
-            text-align: center;
-            color: var(--text-muted);
-            font-size: 0.9rem;
+            padding: 48px 20px; text-align: center;
+            color: var(--text-muted); font-size: 0.9rem;
         }
 
-        /* Toast */
         #toastContainer {
-            position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 3000;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            align-items: center;
-            pointer-events: none;
+            position: fixed; bottom: 20px; left: 50%;
+            transform: translateX(-50%); z-index: 3000;
+            display: flex; flex-direction: column; gap: 8px;
+            align-items: center; pointer-events: none;
         }
         .toast-item {
-            background: var(--surface);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 12px 18px;
-            font-size: 0.85rem;
-            box-shadow: var(--shadow-2);
-            pointer-events: auto;
-            min-width: 260px;
-            text-align: center;
+            background: var(--surface); color: var(--text);
+            border: 1px solid var(--border); border-radius: 12px;
+            padding: 12px 18px; font-size: 0.85rem;
+            box-shadow: var(--shadow-2); pointer-events: auto;
+            min-width: 260px; text-align: center;
         }
 
         @media (max-width: 576px) {
@@ -336,7 +216,6 @@
         </div>
     </div>
 
-    <!-- ── Info bar ── -->
     <div class="card" style="padding: 14px 18px;">
         <div class="info-bar">
             <div class="info-item">
@@ -354,7 +233,6 @@
         </div>
     </div>
 
-    <!-- ── Filters ── -->
     <div class="card">
         <div class="row g-2">
             <div class="col-6 col-md-2">
@@ -382,8 +260,6 @@
                 <input type="text" id="symbolFilter" class="form-control-sm" placeholder="Optional" autocomplete="off">
             </div>
         </div>
-
-        <!-- Custom date range sub-row -->
         <div class="row g-2 custom-range-row" id="customRangeRow" style="margin-top: 8px;">
             <div class="col-6 col-md-2">
                 <label class="form-label" for="fromDate">From</label>
@@ -396,7 +272,6 @@
         </div>
     </div>
 
-    <!-- ── List ── -->
     <div class="card" style="padding: 0;">
         <div class="list-scroll" id="listScroll">
             <div class="empty-state">Loading…</div>
@@ -408,12 +283,10 @@
 <div id="toastContainer" aria-live="polite"></div>
 
 <script>
-// ── Topic name from URL path ──
 const TOPIC = decodeURIComponent(
     window.location.pathname.replace(/^\/announcements\/topic\//, '')
 );
 
-// ── Fetch wrapper: 401 → /login ──
 const originalFetch = window.fetch;
 window.fetch = function (...args) {
     return originalFetch.apply(this, args).then(response => {
@@ -425,7 +298,6 @@ window.fetch = function (...args) {
     });
 };
 
-// ── Theme ──
 const themeToggle = document.getElementById('themeToggle');
 function applyTheme(theme) {
     if (theme === 'dark') {
@@ -445,7 +317,6 @@ themeToggle.addEventListener('click', function () {
     localStorage.setItem('annTheme', next);
 });
 
-// ── Toast ──
 function showToast(msg) {
     const c = document.getElementById('toastContainer');
     const t = document.createElement('div');
@@ -455,13 +326,11 @@ function showToast(msg) {
     setTimeout(() => { if (t.parentNode) t.remove(); }, 3500);
 }
 
-// ── Logout ──
 document.getElementById('logoutBtn').addEventListener('click', function () {
     originalFetch('/api/logout', { method: 'POST' })
         .finally(() => { window.location.href = '/login'; });
 });
 
-// ── URL state ──
 function isCustomRange() {
     return document.getElementById('daysFilter').value === 'custom';
 }
@@ -517,7 +386,6 @@ function saveStateToUrl() {
     history.replaceState(null, '', location.pathname + '?' + p.toString());
 }
 
-// ── Date helpers ──
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEKDAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
@@ -559,7 +427,6 @@ function rangeLabel() {
     return `${formatDateShort(start.toISOString().slice(0,10))} – ${formatDateShort(end.toISOString().slice(0,10))}`;
 }
 
-// ── Escape HTML ──
 function escapeHtml(s) {
     return String(s)
         .replace(/&/g, '&amp;')
@@ -568,7 +435,6 @@ function escapeHtml(s) {
         .replace(/"/g, '&quot;');
 }
 
-// ── Render list ──
 function renderList(rows) {
     const container = document.getElementById('listScroll');
     if (!rows || rows.length === 0) {
@@ -613,14 +479,12 @@ function renderList(rows) {
     container.innerHTML = html;
 }
 
-// ── Load list ──
 async function loadList() {
     const range = getRangeParams();
     const f = getFilterParams();
 
     document.getElementById('rangeValue').textContent = rangeLabel();
 
-    // Back link carries the same range and filters
     const backParams = new URLSearchParams();
     if (range.from_date) {
         backParams.set('from_date', range.from_date);
@@ -652,9 +516,10 @@ async function loadList() {
             return;
         }
         const data = await r.json();
-        const n = (data.rows || []).length;
-        document.getElementById('totalValue').textContent = n.toLocaleString();
-        document.getElementById('showingValue').textContent = n.toLocaleString();
+        const shown = (data.rows || []).length;
+        const total = typeof data.total === 'number' ? data.total : shown;
+        document.getElementById('totalValue').textContent = total.toLocaleString();
+        document.getElementById('showingValue').textContent = shown.toLocaleString();
         renderList(data.rows || []);
     } catch (e) {
         document.getElementById('listScroll').innerHTML =
@@ -662,7 +527,6 @@ async function loadList() {
     }
 }
 
-// ── Filter handlers ──
 document.getElementById('daysFilter').addEventListener('change', function () {
     if (this.value === 'custom') {
         document.getElementById('customRangeRow').classList.add('show');
@@ -708,7 +572,6 @@ let dateDebounce = null;
     });
 });
 
-// ── Boot ──
 document.getElementById('topicTitle').textContent = TOPIC;
 document.title = `${TOPIC} — Corporate Announcements`;
 loadList();
