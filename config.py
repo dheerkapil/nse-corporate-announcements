@@ -14,7 +14,7 @@ NSE_BACKFILL_CHUNK_DAYS = 7
 NSE_BACKFILL_CHUNK_DELAY = 1.5
 
 # ── Retention ────────────────────────────────────────────
-RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "365"))
+RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "90"))
 BACKFILL_DAYS = int(os.environ.get("BACKFILL_DAYS", "90"))
 DEFAULT_RANGE_DAYS = int(os.environ.get("DEFAULT_RANGE_DAYS", "90"))
 MAX_ROWS_PER_PAGE = 1000

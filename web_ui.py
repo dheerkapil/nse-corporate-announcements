@@ -184,42 +184,86 @@ def gh_get(filename):
         return None
 
 
+_gh_put_lock = threading.Lock()
+
+
 def gh_put(filename, content, message):
+    # Pushes can fire from several threads at once (the fetcher loop, plus the
+    # _bg() calls in the /api/... routes). Serialise them, or two force-updates
+    # can race and silently drop one file.
+    with _gh_put_lock:
+        return _gh_put_impl(filename, content, message)
+
+
+def _gh_put_impl(filename, content, message):
     if not config.GITHUB_BACKUP_TOKEN:
         return False
 
-    url = f"{GH_API}/repos/{config.GITHUB_REPO}/contents/{filename}"
-    url += f"?ref={config.GITHUB_CACHE_BRANCH}"
+    repo = config.GITHUB_REPO
+    branch = config.GITHUB_CACHE_BRANCH
 
-    sha = None
-    try:
-        r = requests.get(url, headers=_gh_headers(), timeout=15)
-        if r.status_code == 200:
-            sha = r.json().get("sha")
-        elif r.status_code != 404:
-            logger.warning(f"gh_put({filename}) lookup: HTTP {r.status_code}")
-            return False
-    except Exception as e:
-        logger.warning(f"gh_put({filename}) lookup: {e}")
+    # 1. upload the new file content as a "blob"
+    r = requests.post(
+        f"{GH_API}/repos/{repo}/git/blobs",
+        headers=_gh_headers(),
+        json={"content": content, "encoding": "utf-8"},
+        timeout=120,
+    )
+    if r.status_code != 201:
+        logger.warning(f"gh_put({filename}) blob: HTTP {r.status_code}")
         return False
+    blob_sha = r.json()["sha"]
 
-    body = {
-        "message": message,
-        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-        "branch": config.GITHUB_CACHE_BRANCH,
-    }
-    if sha:
-        body["sha"] = sha
+    # 2. read the current commit/tree so the other files are kept
+    base_tree = None
+    r = requests.get(
+        f"{GH_API}/repos/{repo}/git/ref/heads/{branch}",
+        headers=_gh_headers(), timeout=15,
+    )
+    if r.status_code == 200:
+        commit_sha = r.json()["object"]["sha"]
+        r2 = requests.get(
+            f"{GH_API}/repos/{repo}/git/commits/{commit_sha}",
+            headers=_gh_headers(), timeout=15,
+        )
+        if r2.status_code == 200:
+            base_tree = r2.json()["tree"]["sha"]
 
-    try:
-        r = requests.put(url, headers=_gh_headers(), json=body, timeout=120)
-        if r.status_code in (200, 201):
-            return True
-        logger.warning(f"gh_put({filename}): HTTP {r.status_code} {r.text[:120]}")
+    # 3. new tree = old tree + the one changed file
+    tree_body = {"tree": [
+        {"path": filename, "mode": "100644", "type": "blob", "sha": blob_sha}
+    ]}
+    if base_tree:
+        tree_body["base_tree"] = base_tree
+    r = requests.post(
+        f"{GH_API}/repos/{repo}/git/trees",
+        headers=_gh_headers(), json=tree_body, timeout=60,
+    )
+    if r.status_code != 201:
+        logger.warning(f"gh_put({filename}) tree: HTTP {r.status_code}")
         return False
-    except Exception as e:
-        logger.warning(f"gh_put({filename}): {e}")
+    tree_sha = r.json()["sha"]
+
+    # 4. commit with NO parent -> the branch never grows history
+    r = requests.post(
+        f"{GH_API}/repos/{repo}/git/commits",
+        headers=_gh_headers(),
+        json={"message": message, "tree": tree_sha},
+        timeout=60,
+    )
+    if r.status_code != 201:
+        logger.warning(f"gh_put({filename}) commit: HTTP {r.status_code}")
         return False
+    new_commit = r.json()["sha"]
+
+    # 5. force the branch to the new single commit
+    r = requests.patch(
+        f"{GH_API}/repos/{repo}/git/refs/heads/{branch}",
+        headers=_gh_headers(),
+        json={"sha": new_commit, "force": True},
+        timeout=30,
+    )
+    return r.status_code in (200, 201)
 
 
 def push_announcements():
