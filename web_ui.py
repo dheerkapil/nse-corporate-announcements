@@ -11,6 +11,7 @@ import hmac
 import hashlib
 import logging
 import threading
+from datetime import datetime, timedelta
 
 import requests
 from flask import (
@@ -30,7 +31,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-GH_ANN_FILE = config.GITHUB_ANN_FILE
+GH_ANN_FILE = config.GITHUB_ANN_FILE          # legacy single-file backup
+ANN_DIR = "data/ann"                          # one small file per day
+ANN_INDEX = f"{ANN_DIR}/_index.json"          # {date: content-hash}
 GH_SETTINGS_FILE = config.GITHUB_SETTINGS_FILE
 GH_VIEWS_FILE = "topic_views_backup.json"
 
@@ -192,29 +195,23 @@ def gh_put(filename, content, message):
     # _bg() calls in the /api/... routes). Serialise them, or two force-updates
     # can race and silently drop one file.
     with _gh_put_lock:
-        return _gh_put_impl(filename, content, message)
+        return _gh_commit({filename: content}, [], message)
 
 
-def _gh_put_impl(filename, content, message):
+def _gh_commit(files, deletes, message):
+    """One commit carrying `files` (added/updated) and `deletes` (removed),
+    with NO parent, force-updated onto the cache branch.
+
+    Keeping it to a single commit is what stops the branch growing history; the
+    caller passes only the files that actually changed, so pushes stay small.
+    """
     if not config.GITHUB_BACKUP_TOKEN:
         return False
 
     repo = config.GITHUB_REPO
     branch = config.GITHUB_CACHE_BRANCH
 
-    # 1. upload the new file content as a "blob"
-    r = requests.post(
-        f"{GH_API}/repos/{repo}/git/blobs",
-        headers=_gh_headers(),
-        json={"content": content, "encoding": "utf-8"},
-        timeout=120,
-    )
-    if r.status_code != 201:
-        logger.warning(f"gh_put({filename}) blob: HTTP {r.status_code}")
-        return False
-    blob_sha = r.json()["sha"]
-
-    # 2. read the current commit/tree so the other files are kept
+    # current tree, so everything we're not touching is preserved
     base_tree = None
     r = requests.get(
         f"{GH_API}/repos/{repo}/git/ref/heads/{branch}",
@@ -229,10 +226,24 @@ def _gh_put_impl(filename, content, message):
         if r2.status_code == 200:
             base_tree = r2.json()["tree"]["sha"]
 
-    # 3. new tree = old tree + the one changed file
-    tree_body = {"tree": [
-        {"path": filename, "mode": "100644", "type": "blob", "sha": blob_sha}
-    ]}
+    entries = []
+    for path, content in files.items():
+        r = requests.post(
+            f"{GH_API}/repos/{repo}/git/blobs",
+            headers=_gh_headers(),
+            json={"content": content, "encoding": "utf-8"},
+            timeout=120,
+        )
+        if r.status_code != 201:
+            logger.warning(f"gh_commit blob {path}: HTTP {r.status_code}")
+            return False
+        entries.append({"path": path, "mode": "100644", "type": "blob", "sha": r.json()["sha"]})
+
+    for path in deletes:
+        # sha=None removes the path from the tree
+        entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
+
+    tree_body = {"tree": entries}
     if base_tree:
         tree_body["base_tree"] = base_tree
     r = requests.post(
@@ -240,11 +251,10 @@ def _gh_put_impl(filename, content, message):
         headers=_gh_headers(), json=tree_body, timeout=60,
     )
     if r.status_code != 201:
-        logger.warning(f"gh_put({filename}) tree: HTTP {r.status_code}")
+        logger.warning(f"gh_commit tree: HTTP {r.status_code}")
         return False
     tree_sha = r.json()["sha"]
 
-    # 4. commit with NO parent -> the branch never grows history
     r = requests.post(
         f"{GH_API}/repos/{repo}/git/commits",
         headers=_gh_headers(),
@@ -252,11 +262,10 @@ def _gh_put_impl(filename, content, message):
         timeout=60,
     )
     if r.status_code != 201:
-        logger.warning(f"gh_put({filename}) commit: HTTP {r.status_code}")
+        logger.warning(f"gh_commit commit: HTTP {r.status_code}")
         return False
     new_commit = r.json()["sha"]
 
-    # 5. force the branch to the new single commit
     r = requests.patch(
         f"{GH_API}/repos/{repo}/git/refs/heads/{branch}",
         headers=_gh_headers(),
@@ -266,13 +275,58 @@ def _gh_put_impl(filename, content, message):
     return r.status_code in (200, 201)
 
 
+def _ann_payload(rows):
+    return json.dumps(rows, default=str, separators=(",", ":"))
+
+
 def push_announcements():
+    """Store announcements as one small file per day and push only the day
+    files that changed — a few hundred KB, never the whole table."""
     rows = announcements.get_all_for_backup()
     if not rows:
         return
-    payload = json.dumps(rows, default=str)
-    if gh_put(GH_ANN_FILE, payload, f"Announcements: {len(rows)} rows"):
-        logger.info(f"Pushed {len(rows)} announcements to GitHub")
+
+    by_date = {}
+    for r in rows:
+        d = str(r.get("announced_at", ""))[:10]
+        if d:
+            by_date.setdefault(d, []).append(r)
+    if not by_date:
+        return
+
+    idx_raw = gh_get(ANN_INDEX)
+    stored = {}
+    if idx_raw:
+        try:
+            stored = (json.loads(idx_raw) or {}).get("dates", {}) or {}
+        except Exception:
+            stored = {}
+
+    files, new_index, changed = {}, {}, 0
+    for d, day_rows in by_date.items():
+        payload = _ann_payload(day_rows)
+        h = hashlib.sha1(payload.encode("utf-8")).hexdigest()
+        new_index[d] = h
+        if stored.get(d) != h:
+            files[f"{ANN_DIR}/{d}.json"] = payload
+            changed += 1
+
+    # prune day-files that have aged out of the retention window
+    cutoff = (datetime.now(config.TIMEZONE) - timedelta(days=config.RETENTION_DAYS)).strftime("%Y-%m-%d")
+    deletes = []
+    for d in list(stored.keys()):
+        if d < cutoff:
+            deletes.append(f"{ANN_DIR}/{d}.json")
+            new_index.pop(d, None)
+
+    if not files and not deletes:
+        return
+
+    files[ANN_INDEX] = json.dumps({"dates": new_index}, separators=(",", ":"))
+    with _gh_put_lock:
+        ok = _gh_commit(files, deletes, f"Announcements: {changed} day-file(s)")
+    if ok:
+        logger.info(f"Pushed {changed} day-file(s), pruned {len(deletes)}")
 
 
 def push_views():
@@ -294,21 +348,45 @@ def _bg(fn):
 
 
 def restore_announcements():
-    content = gh_get(GH_ANN_FILE)
-    if not content:
-        logger.info("Announcements restore: no backup found")
-        return 0
-    try:
-        data = json.loads(content)
+    idx_raw = gh_get(ANN_INDEX)
+    dates = []
+    if idx_raw:
+        try:
+            dates = sorted((json.loads(idx_raw) or {}).get("dates", {}).keys())
+        except Exception:
+            dates = []
+
+    if not dates:
+        # legacy single-file backup (before per-day files)
+        content = gh_get(GH_ANN_FILE)
+        if not content:
+            logger.info("Announcements restore: no backup found")
+            return 0
+        try:
+            data = json.loads(content)
+        except Exception as e:
+            logger.error(f"Announcements restore failed: {e}")
+            return 0
         if not isinstance(data, list):
             logger.warning("Announcements restore: invalid payload")
             return 0
         n = announcements.restore_from_backup(data)
-        logger.info("Announcements restore complete")
+        logger.info(f"Announcements restore (legacy file): {n} rows")
         return n
-    except Exception as e:
-        logger.error(f"Announcements restore failed: {e}")
-        return 0
+
+    total = 0
+    for d in dates:
+        content = gh_get(f"{ANN_DIR}/{d}.json")
+        if not content:
+            continue
+        try:
+            data = json.loads(content)
+        except Exception:
+            continue
+        if isinstance(data, list):
+            total += announcements.restore_from_backup(data)
+    logger.info(f"Announcements restore: {total} rows from {len(dates)} day-files")
+    return total
 
 
 def restore_views():
