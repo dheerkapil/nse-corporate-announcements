@@ -524,6 +524,13 @@ def health():
     return jsonify({"status": "ok", "age": age}), 200
 
 
+@app.route("/api/nse_probe")
+def api_nse_probe():
+    """Temporary diagnostic: which HTTP client profile can reach NSE from
+    this host. Sits behind the login gate like everything else."""
+    return jsonify({"results": announcements.probe_nse()})
+
+
 @app.route("/")
 def root():
     return redirect("/announcements")

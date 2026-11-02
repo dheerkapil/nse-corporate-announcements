@@ -12,6 +12,13 @@ from datetime import datetime, timedelta
 
 import requests
 
+try:                                    # browser-impersonating HTTP client
+    from curl_cffi import requests as _cffi_requests
+    _CFFI_AVAILABLE = True
+except Exception:                       # optional dependency - degrade quietly
+    _cffi_requests = None
+    _CFFI_AVAILABLE = False
+
 import config
 
 logger = logging.getLogger(__name__)
@@ -73,6 +80,61 @@ _session_ts = 0.0
 _session_lock = threading.Lock()
 
 
+# NSE sits behind a bot-protection edge that fingerprints the TLS handshake,
+# so matching the User-Agent alone is not enough: the client has to look like
+# Chrome at the transport layer too. curl_cffi reproduces Chrome's TLS and
+# HTTP/2 fingerprint; the requests library cannot.
+IMPERSONATE_TARGETS = ("chrome", "chrome124", "chrome120", "safari17_0")
+
+
+def _build_session(impersonate=None):
+    """Return (session, label).
+
+    Uses curl_cffi with a real browser fingerprint when available, otherwise
+    falls back to plain requests so the app still runs without the dependency.
+    """
+    if _CFFI_AVAILABLE and impersonate:
+        try:
+            return _cffi_requests.Session(impersonate=impersonate), impersonate
+        except Exception as e:
+            logger.warning(f"curl_cffi impersonate={impersonate} unavailable: {e}")
+
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": config.USER_AGENT,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": config.NSE_REFERER,
+    })
+    return s, "requests"
+
+
+def _cookie_names(session):
+    try:
+        return sorted({c.name for c in session.cookies})
+    except Exception:
+        try:
+            return sorted({str(c) for c in session.cookies})
+        except Exception:
+            return []
+
+
+def _warm_up(session):
+    """Visit the pages a browser would visit so NSE issues its cookies.
+
+    Best-effort: a failed warm-up no longer aborts the cycle, because the
+    API call is what tells us whether we are blocked.
+    """
+    ok = False
+    for url in (config.NSE_BASE, config.NSE_REFERER):
+        try:
+            r = session.get(url, timeout=config.NSE_COOKIE_WARMUP_TIMEOUT)
+            ok = ok or r.status_code == 200
+        except Exception as e:
+            logger.warning(f"NSE cookie warm-up failed on {url}: {e}")
+    return ok
+
+
 def _get_session():
     global _session, _session_ts
     now = time.time()
@@ -80,25 +142,16 @@ def _get_session():
         if _session is not None and (now - _session_ts) < config.NSE_SESSION_TTL_SECONDS:
             return _session
 
-        s = requests.Session()
-        s.headers.update({
-            "User-Agent": config.USER_AGENT,
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": config.NSE_REFERER,
-        })
-        try:
-            s.get(config.NSE_BASE, timeout=config.NSE_COOKIE_WARMUP_TIMEOUT)
-            s.get(config.NSE_REFERER, timeout=config.NSE_COOKIE_WARMUP_TIMEOUT)
-        except Exception as e:
-            logger.warning(f"NSE cookie warm-up failed: {e}")
-            _session = None
-            return None
+        session, label = _build_session(getattr(config, "NSE_IMPERSONATE", "chrome"))
+        warmed = _warm_up(session)
 
-        _session = s
+        _session = session
         _session_ts = now
-        logger.info("NSE session established")
-        return _session
+        logger.info(
+            f"NSE session established ({label}, warm-up "
+            f"{'ok' if warmed else 'failed'}, cookies={_cookie_names(session)})"
+        )
+        return session
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -456,7 +509,11 @@ def fetch_announcements(from_date=None, to_date=None):
             logger.warning("NSE rate-limited (429) on announcements fetch")
             return []
         if r.status_code == 403:
-            logger.warning("NSE 403 — refreshing session and retrying once")
+            logger.warning(
+                "NSE 403 — refreshing session and retrying once. If this repeats "
+                "every cycle, NSE is blocking this host's IP address, not rejecting "
+                "the cookies, and no amount of retrying will clear it."
+            )
             global _session, _session_ts
             with _session_lock:
                 _session = None
@@ -901,3 +958,56 @@ def reclassify_all():
     else:
         logger.info("Reclassify: no rows needed updating")
     return updated
+
+
+# =================================================================
+#  DIAGNOSTIC - which client profile can reach NSE from this host
+# =================================================================
+
+def probe_nse():
+    """Try several HTTP client profiles against NSE and report the outcome.
+
+    Exposed temporarily via /api/nse_probe so the block can be diagnosed from
+    inside the running service, where the real IP address lives.
+    """
+    results = []
+
+    def attempt(label, session, headers=None):
+        entry = {"method": label}
+        try:
+            if headers:
+                session.headers.update(headers)
+            w = session.get(config.NSE_BASE, timeout=config.NSE_COOKIE_WARMUP_TIMEOUT)
+            entry["warmup"] = w.status_code
+            entry["cookies"] = _cookie_names(session)
+            r = session.get(
+                config.NSE_ANNOUNCEMENTS_URL,
+                params={"index": "equities"},
+                timeout=config.NSE_REQUEST_TIMEOUT,
+            )
+            entry["api"] = r.status_code
+            entry["bytes"] = len(r.content or b"")
+            entry["snippet"] = (r.text or "")[:160].replace("\n", " ")
+        except Exception as e:
+            entry["error"] = f"{type(e).__name__}: {e}"
+        results.append(entry)
+
+    attempt("requests-plain", requests.Session())
+    attempt("requests-browser-headers", requests.Session(), {
+        "User-Agent": config.USER_AGENT,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": config.NSE_REFERER,
+    })
+
+    if _CFFI_AVAILABLE:
+        for profile in IMPERSONATE_TARGETS:
+            try:
+                attempt(f"curl_cffi-{profile}",
+                        _cffi_requests.Session(impersonate=profile))
+            except Exception as e:
+                results.append({"method": f"curl_cffi-{profile}", "error": str(e)})
+    else:
+        results.append({"method": "curl_cffi", "error": "not installed"})
+
+    return results
