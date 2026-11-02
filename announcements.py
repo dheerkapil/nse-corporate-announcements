@@ -1011,3 +1011,59 @@ def probe_nse():
         results.append({"method": "curl_cffi", "error": "not installed"})
 
     return results
+
+
+BSE_ANNOUNCEMENTS_URL = (
+    "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
+)
+BSE_REFERER = "https://www.bseindia.com/corporate/announcements_mvc.aspx"
+
+
+def probe_bse():
+    """Can this host read BSE's announcement API?
+
+    BSE carries most of the same filings as NSE and is far less aggressive
+    about who asks, so it is the fallback if NSE keeps refusing this host.
+    """
+    today = _now().strftime("%Y%m%d")
+    params = {
+        "pageno": 1,
+        "strCat": "-1",
+        "strPrevDate": today,
+        "strScrip": "",
+        "strSearch": "P",
+        "strToDate": today,
+        "strType": "C",
+        "subcategory": "",
+    }
+
+    profiles = [("requests", requests.Session())]
+    if _CFFI_AVAILABLE:
+        profiles.append(("curl_cffi-chrome",
+                         _cffi_requests.Session(impersonate="chrome")))
+
+    results = []
+    for label, session in profiles:
+        entry = {"method": f"bse-{label}"}
+        try:
+            session.headers.update({
+                "Referer": BSE_REFERER,
+                "Accept": "application/json, text/plain, */*",
+            })
+            r = session.get(BSE_ANNOUNCEMENTS_URL, params=params,
+                            timeout=config.NSE_REQUEST_TIMEOUT)
+            entry["status"] = r.status_code
+            entry["bytes"] = len(r.content or b"")
+            entry["snippet"] = (r.text or "")[:160].replace("\n", " ")
+            try:
+                rows = (r.json() or {}).get("Table") or []
+                entry["rows"] = len(rows)
+                if rows:
+                    entry["sample_keys"] = sorted(rows[0].keys())[:14]
+            except Exception:
+                entry["rows"] = None
+        except Exception as e:
+            entry["error"] = f"{type(e).__name__}: {e}"
+        results.append(entry)
+
+    return results

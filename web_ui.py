@@ -528,7 +528,10 @@ def health():
 def api_nse_probe():
     """Temporary diagnostic: which HTTP client profile can reach NSE from
     this host. Sits behind the login gate like everything else."""
-    return jsonify({"results": announcements.probe_nse()})
+    return jsonify({
+        "nse": announcements.probe_nse(),
+        "bse": announcements.probe_bse(),
+    })
 
 
 @app.route("/")
