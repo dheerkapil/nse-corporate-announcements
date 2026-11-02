@@ -46,6 +46,10 @@ GITHUB_ANN_FILE = "announcements_backup.json"
 GITHUB_SETTINGS_FILE = "notify_settings_backup.json"
 
 # ── NSE endpoints ────────────────────────────────────────
+# Browser profile curl_cffi should imitate when talking to NSE. NSE blocks
+# clients whose TLS fingerprint does not look like a real browser.
+NSE_IMPERSONATE = os.environ.get("NSE_IMPERSONATE", "chrome")
+
 NSE_BASE = "https://www.nseindia.com"
 NSE_ANNOUNCEMENTS_URL = "https://www.nseindia.com/api/corporate-announcements?index=equities"
 NSE_REFERER = "https://www.nseindia.com/companies-listing/corporate-filings-announcements"
