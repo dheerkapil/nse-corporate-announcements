@@ -244,6 +244,56 @@ def notify_items(items):
 #  BACKUP / RESTORE HELPERS  (called by web_ui.py)
 # ═════════════════════════════════════════════════════════════════
 
+# =================================================================
+#  FAILURE ALERTS
+#
+#  The fetcher runs every 15 minutes. When it cannot get data, say so once
+#  and then stay quiet for the cooldown window instead of shouting every cycle.
+# =================================================================
+
+_alert_lock = threading.Lock()
+_alert_state = {"last_sent": 0.0, "failing": False}
+
+
+def alert_fetch_failure(reason, cooldown_seconds=None):
+    """Report a broken fetch, at most once per cooldown window.
+
+    Returns True if a message was sent, False if it was suppressed.
+    """
+    if cooldown_seconds is None:
+        cooldown_seconds = getattr(config, "ALERT_COOLDOWN_SECONDS", 3600)
+
+    with _alert_lock:
+        now = time.time()
+        _alert_state["failing"] = True
+        if now - _alert_state["last_sent"] < cooldown_seconds:
+            logger.info("Fetch-failure alert suppressed (within cooldown)")
+            return False
+        _alert_state["last_sent"] = now
+
+    minutes = max(1, int(cooldown_seconds // 60))
+    text = (
+        "<b>NSE fetch failing</b>\n"
+        f"{html.escape(str(reason or 'no route returned data'))}\n\n"
+        "No new announcements are being collected. "
+        f"This alert repeats at most every {minutes} minutes."
+    )
+    return send_message(text)
+
+
+def alert_fetch_recovered():
+    """Send one message when fetching works again after a failure."""
+    with _alert_lock:
+        if not _alert_state["failing"]:
+            return False
+        _alert_state["failing"] = False
+        _alert_state["last_sent"] = 0.0
+
+    return send_message(
+        "<b>NSE fetch recovered</b>\nAnnouncements are arriving again."
+    )
+
+
 def get_settings_for_backup():
     """Return the notify settings dict for GitHub backup."""
     return load_notify_settings()

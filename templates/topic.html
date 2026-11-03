@@ -238,6 +238,9 @@
             <div class="col-6 col-md-2">
                 <label class="form-label" for="daysFilter">Range</label>
                 <select id="daysFilter" class="form-select form-select-sm">
+                    <option value="1">Today</option>
+                    <option value="2">Last 2 days</option>
+                    <option value="3">Last 3 days</option>
                     <option value="7">7 days</option>
                     <option value="30">30 days</option>
                     <option value="90" selected>90 days</option>
@@ -422,8 +425,9 @@ function rangeLabel() {
         return '90 days';
     }
     const days = parseInt(document.getElementById('daysFilter').value);
+    if (days === 1) return 'Today';
     const end = new Date();
-    const start = new Date(Date.now() - days * 86400000);
+    const start = new Date(Date.now() - (days - 1) * 86400000);
     return `${formatDateShort(start.toISOString().slice(0,10))} – ${formatDateShort(end.toISOString().slice(0,10))}`;
 }
 

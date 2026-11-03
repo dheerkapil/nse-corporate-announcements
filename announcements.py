@@ -3,12 +3,14 @@ announcements.py — NSE corporate announcements data layer.
 """
 
 import re
+import json
 import time
 import sqlite3
 import logging
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 import requests
 
@@ -37,8 +39,13 @@ def _now_str():
 
 
 def _range_bounds(days):
+    """Start and end dates for a "last N days" window.
+
+    Today counts as one of the days, so days=1 means today alone, days=2 means
+    today and yesterday, and so on.
+    """
     now = _now()
-    start = now - timedelta(days=int(days))
+    start = now - timedelta(days=max(0, int(days) - 1))
     return start.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
 
 
@@ -443,6 +450,14 @@ def oldest_row_date():
     return None
 
 
+def newest_row_date():
+    with db() as c:
+        row = c.execute("SELECT MAX(announced_at) AS d FROM announcements").fetchone()
+    if row and row["d"]:
+        return row["d"][:10]
+    return None
+
+
 def row_count():
     with db() as c:
         row = c.execute("SELECT COUNT(*) AS n FROM announcements").fetchone()
@@ -486,12 +501,94 @@ def _parse_payload(payload):
     return out
 
 
-def fetch_announcements(from_date=None, to_date=None):
-    s = _get_session()
-    if s is None:
-        return []
+_last_fetch_error = None
 
+
+def last_fetch_error():
+    """Why the most recent fetch failed, or None if it succeeded."""
+    return _last_fetch_error
+
+
+def _reset_session():
+    global _session, _session_ts
+    with _session_lock:
+        _session = None
+        _session_ts = 0.0
+
+
+def _parse_relay_text(text):
+    """The relay wraps the payload in a short preamble - return just the JSON."""
+    if not text:
+        return None
+    marks = [i for i in (text.find("["), text.find("{")) if i != -1]
+    if not marks:
+        return None
+    try:
+        return json.loads(text[min(marks):])
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Relay payload could not be parsed: {e}")
+        return None
+
+
+def _request_relay(params):
+    """Fetch through the free public relay. Returns (payload, error)."""
+    base = config.NSE_ANNOUNCEMENTS_URL
+    url = RELAY_PREFIX + base
+    if params:
+        url += ("&" if "?" in base else "?") + urlencode(params)
+    try:
+        r = requests.get(url, timeout=90, headers={"Accept": "text/plain"})
+    except Exception as e:
+        return None, f"relay: {type(e).__name__}"
+    if r.status_code != 200:
+        return None, f"relay: HTTP {r.status_code}"
+    payload = _parse_relay_text(r.text or "")
+    if payload is None:
+        return None, "relay: response was not JSON"
+    return payload, None
+
+
+def _request_direct(params):
+    """Fetch NSE directly. Returns (payload, error)."""
     url = config.NSE_ANNOUNCEMENTS_URL
+
+    def _go(session):
+        if params:
+            return session.get(url, params=params, timeout=config.NSE_REQUEST_TIMEOUT)
+        return session.get(url, timeout=config.NSE_REQUEST_TIMEOUT)
+
+    try:
+        r = _go(_get_session())
+    except Exception as e:
+        return None, f"direct: {type(e).__name__}"
+
+    if r.status_code in (403, 429):
+        logger.warning(
+            f"NSE direct HTTP {r.status_code} - refreshing session and retrying once. "
+            "A repeat every cycle means NSE is blocking this host's IP, not the cookies."
+        )
+        _reset_session()
+        try:
+            r = _go(_get_session())
+        except Exception as e:
+            return None, f"direct retry: {type(e).__name__}"
+
+    if r.status_code != 200:
+        return None, f"direct: HTTP {r.status_code}"
+    try:
+        return r.json(), None
+    except Exception:
+        return None, "direct: response was not JSON"
+
+
+def fetch_announcements(from_date=None, to_date=None):
+    """Fetch announcements: relay first, NSE direct second.
+
+    The reason for a failure is kept in _last_fetch_error so the caller can
+    raise an alert without this module knowing anything about Telegram.
+    """
+    global _last_fetch_error
+
     params = None
     if from_date and to_date:
         params = {
@@ -499,45 +596,25 @@ def fetch_announcements(from_date=None, to_date=None):
             "to_date":   _nse_date_fmt(to_date),
         }
 
-    try:
-        if params:
-            r = s.get(url, params=params, timeout=config.NSE_REQUEST_TIMEOUT)
-        else:
-            r = s.get(url, timeout=config.NSE_REQUEST_TIMEOUT)
+    errors = []
 
-        if r.status_code == 429:
-            logger.warning("NSE rate-limited (429) on announcements fetch")
-            return []
-        if r.status_code == 403:
-            logger.warning(
-                "NSE 403 — refreshing session and retrying once. If this repeats "
-                "every cycle, NSE is blocking this host's IP address, not rejecting "
-                "the cookies, and no amount of retrying will clear it."
-            )
-            global _session, _session_ts
-            with _session_lock:
-                _session = None
-                _session_ts = 0.0
-            s = _get_session()
-            if s is None:
-                return []
-            try:
-                if params:
-                    r = s.get(url, params=params, timeout=config.NSE_REQUEST_TIMEOUT)
-                else:
-                    r = s.get(url, timeout=config.NSE_REQUEST_TIMEOUT)
-            except Exception as e:
-                logger.warning(f"NSE retry failed: {e}")
-                return []
+    if config.NSE_USE_RELAY:
+        payload, err = _request_relay(params)
+        if payload is not None:
+            _last_fetch_error = None
+            return _parse_payload(payload)
+        errors.append(err)
 
-        if r.status_code != 200:
-            logger.warning(f"NSE announcements HTTP {r.status_code}")
-            return []
-        payload = r.json()
-    except Exception as e:
-        logger.warning(f"NSE announcements fetch failed: {e}")
-        return []
-    return _parse_payload(payload)
+    payload, err = _request_direct(params)
+    if payload is not None:
+        _last_fetch_error = None
+        return _parse_payload(payload)
+    errors.append(err)
+
+    _last_fetch_error = "; ".join(e for e in errors if e) or "no route returned data"
+    logger.warning(f"Announcements fetch failed on every route: {_last_fetch_error}")
+    return []
+
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -825,6 +902,64 @@ def prune_old():
 #  PUBLIC ENTRY POINT
 # ═════════════════════════════════════════════════════════════════
 
+_last_gap_fill = 0.0
+GAP_FILL_MIN_SECONDS = 1800
+GAP_FILL_MAX_DAYS = 45
+
+
+def backfill_gap():
+    """Fetch only the days missing between the newest stored row and today.
+
+    Needed after the fetcher has been down for a while: the normal cycle only
+    picks up the current feed, which never reaches back far enough to repair a
+    multi-day hole.
+    """
+    global _last_gap_fill
+
+    newest = newest_row_date()
+    if not newest:
+        return {"fetched": 0, "new": 0, "days": 0}
+
+    now = time.time()
+    if now - _last_gap_fill < GAP_FILL_MIN_SECONDS:
+        return {"fetched": 0, "new": 0, "days": 0, "skipped": "recent"}
+
+    try:
+        start_d = datetime.strptime(newest, "%Y-%m-%d").date() + timedelta(days=1)
+    except Exception:
+        return {"fetched": 0, "new": 0, "days": 0}
+
+    end_d = _now().date()
+    if start_d > end_d:
+        return {"fetched": 0, "new": 0, "days": 0}
+
+    span = (end_d - start_d).days + 1
+    if span > GAP_FILL_MAX_DAYS:
+        start_d = end_d - timedelta(days=GAP_FILL_MAX_DAYS - 1)
+        span = GAP_FILL_MAX_DAYS
+
+    logger.info(f"Gap fill: {start_d} -> {end_d} ({span} days)")
+
+    total_fetched = 0
+    total_new = 0
+    for chunk_start, chunk_end in _chunk_windows(
+        start_d, end_d, config.NSE_BACKFILL_CHUNK_DAYS
+    ):
+        items = fetch_announcements(from_date=chunk_start, to_date=chunk_end)
+        if not items:
+            # stop early rather than hammer a route that is clearly failing
+            logger.warning(f"Gap fill stopped at {chunk_start} - no data returned")
+            break
+        total_fetched += len(items)
+        total_new += len(save_announcements(items))
+        time.sleep(config.NSE_BACKFILL_CHUNK_DELAY)
+
+    _last_gap_fill = time.time()
+    prune_old()
+    logger.info(f"Gap fill complete: {total_fetched} fetched, {total_new} new")
+    return {"fetched": total_fetched, "new": total_new, "days": span}
+
+
 def run_fetch_cycle(force_backfill=False):
     with _fetch_lock:
         mode = "default"
@@ -1009,5 +1144,102 @@ def probe_nse():
                 results.append({"method": f"curl_cffi-{profile}", "error": str(e)})
     else:
         results.append({"method": "curl_cffi", "error": "not installed"})
+
+    return results
+
+
+RELAY_PREFIX = "https://r.jina.ai/"
+
+
+def _relay_attempt(label, url):
+    """Ask a free public relay to fetch NSE on our behalf and report the result."""
+    entry = {"method": label, "url": url}
+    try:
+        r = requests.get(url, timeout=90, headers={"Accept": "text/plain"})
+        entry["status"] = r.status_code
+        text = r.text or ""
+        entry["bytes"] = len(text)
+        entry["starts_with"] = text[:70].replace("\n", " ")
+        payload = _parse_relay_text(text)
+        if payload is None:
+            entry["json_ok"] = False
+            entry["tail"] = text[-120:].replace("\n", " ")
+            return entry
+        rows = payload.get("data") if isinstance(payload, dict) else payload
+        entry["json_ok"] = True
+        entry["rows"] = len(rows or [])
+        if rows:
+            entry["sample_symbol"] = rows[0].get("symbol")
+            entry["sample_dt"] = rows[0].get("an_dt")
+    except Exception as e:
+        entry["error"] = f"{type(e).__name__}: {e}"
+    return entry
+
+
+def probe_relay():
+    """Test the relay route: the latest feed, and a date-range query."""
+    results = [_relay_attempt("nse-via-relay-latest",
+                              RELAY_PREFIX + config.NSE_ANNOUNCEMENTS_URL)]
+
+    end = _now()
+    start = end - timedelta(days=2)
+    ranged = (config.NSE_ANNOUNCEMENTS_URL
+              + f"&from_date={_nse_date_fmt(start)}&to_date={_nse_date_fmt(end)}")
+    results.append(_relay_attempt("nse-via-relay-daterange", RELAY_PREFIX + ranged))
+    return results
+
+
+BSE_ANNOUNCEMENTS_URL = (
+    "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
+)
+BSE_REFERER = "https://www.bseindia.com/corporate/announcements_mvc.aspx"
+
+
+def probe_bse():
+    """Can this host read BSE's announcement API?
+
+    BSE carries most of the same filings as NSE and is far less aggressive
+    about who asks, so it is the fallback if NSE keeps refusing this host.
+    """
+    today = _now().strftime("%Y%m%d")
+    params = {
+        "pageno": 1,
+        "strCat": "-1",
+        "strPrevDate": today,
+        "strScrip": "",
+        "strSearch": "P",
+        "strToDate": today,
+        "strType": "C",
+        "subcategory": "",
+    }
+
+    profiles = [("requests", requests.Session())]
+    if _CFFI_AVAILABLE:
+        profiles.append(("curl_cffi-chrome",
+                         _cffi_requests.Session(impersonate="chrome")))
+
+    results = []
+    for label, session in profiles:
+        entry = {"method": f"bse-{label}"}
+        try:
+            session.headers.update({
+                "Referer": BSE_REFERER,
+                "Accept": "application/json, text/plain, */*",
+            })
+            r = session.get(BSE_ANNOUNCEMENTS_URL, params=params,
+                            timeout=config.NSE_REQUEST_TIMEOUT)
+            entry["status"] = r.status_code
+            entry["bytes"] = len(r.content or b"")
+            entry["snippet"] = (r.text or "")[:160].replace("\n", " ")
+            try:
+                rows = (r.json() or {}).get("Table") or []
+                entry["rows"] = len(rows)
+                if rows:
+                    entry["sample_keys"] = sorted(rows[0].keys())[:14]
+            except Exception:
+                entry["rows"] = None
+        except Exception as e:
+            entry["error"] = f"{type(e).__name__}: {e}"
+        results.append(entry)
 
     return results

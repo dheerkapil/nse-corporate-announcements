@@ -50,6 +50,13 @@ GITHUB_SETTINGS_FILE = "notify_settings_backup.json"
 # clients whose TLS fingerprint does not look like a real browser.
 NSE_IMPERSONATE = os.environ.get("NSE_IMPERSONATE", "chrome")
 
+# Try the free relay before hitting NSE directly. NSE blocks this host's
+# address, so the relay is the route that actually works.
+NSE_USE_RELAY = os.environ.get("NSE_USE_RELAY", "1").lower() not in ("0", "false", "no")
+
+# How often to repeat a Telegram alert while fetching is broken.
+ALERT_COOLDOWN_SECONDS = int(os.environ.get("ALERT_COOLDOWN_SECONDS", "3600"))
+
 NSE_BASE = "https://www.nseindia.com"
 NSE_ANNOUNCEMENTS_URL = "https://www.nseindia.com/api/corporate-announcements?index=equities"
 NSE_REFERER = "https://www.nseindia.com/companies-listing/corporate-filings-announcements"

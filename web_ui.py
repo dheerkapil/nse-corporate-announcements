@@ -528,7 +528,11 @@ def health():
 def api_nse_probe():
     """Temporary diagnostic: which HTTP client profile can reach NSE from
     this host. Sits behind the login gate like everything else."""
-    return jsonify({"results": announcements.probe_nse()})
+    return jsonify({
+        "nse": announcements.probe_nse(),
+        "bse": announcements.probe_bse(),
+        "relay": announcements.probe_relay(),
+    })
 
 
 @app.route("/")
@@ -723,6 +727,14 @@ def fetcher_thread():
             result = announcements.run_fetch_cycle()
             _stamp_tick()
 
+            # Tell the user when fetching breaks, but no more than once an hour,
+            # and once more when it recovers.
+            fetch_error = announcements.last_fetch_error()
+            if fetch_error:
+                telegram_notify.alert_fetch_failure(fetch_error)
+            else:
+                telegram_notify.alert_fetch_recovered()
+
             if result["new_items"]:
                 notify_result = telegram_notify.notify_items(result["new_items"])
                 logger.info(
@@ -754,6 +766,8 @@ def startup_thread():
         restore_views()
         restore_announcements()
         announcements.reclassify_all()
+        # fill any days missed while this service was down
+        announcements.backfill_gap()
     except Exception as e:
         logger.exception(f"startup restore error: {e}")
     finally:
