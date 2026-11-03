@@ -39,6 +39,9 @@ GH_VIEWS_FILE = "topic_views_backup.json"
 
 GH_API = "https://api.github.com"
 
+# Set once the legacy single-file snapshot has been pruned from the cache branch.
+_legacy_cleaned = False
+
 _last_tick = time.time()
 _last_tick_lock = threading.Lock()
 
@@ -323,8 +326,22 @@ def push_announcements():
         return
 
     files[ANN_INDEX] = json.dumps({"dates": new_index}, separators=(",", ":"))
+
+    # Once the per-day files exist the 17.5 MB legacy snapshot is dead weight:
+    # it is never read again, and it is the single largest thing in the branch.
+    # Remove it (and the stale code copies left there by the old snapshot) once.
+    global _legacy_cleaned
+    if not _legacy_cleaned:
+        deletes.extend([GH_ANN_FILE, "announcements.py", "config.py",
+                        "requirements.txt", "telegram_notify.py", "web_ui.py",
+                        "templates/announcements.html", "templates/login.html",
+                        "templates/topic.html", ".python-version", "README.md"])
+        _legacy_cleaned = True
+
     with _gh_put_lock:
         ok = _gh_commit(files, deletes, f"Announcements: {changed} day-file(s)")
+        if ok and _legacy_cleaned:
+            logger.info("Removed the legacy snapshot and stale code from the cache branch")
     if ok:
         logger.info(f"Pushed {changed} day-file(s), pruned {len(deletes)}")
 
