@@ -531,6 +531,7 @@ def api_nse_probe():
     return jsonify({
         "nse": announcements.probe_nse(),
         "bse": announcements.probe_bse(),
+        "relay": announcements.probe_relay(),
     })
 
 

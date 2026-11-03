@@ -3,6 +3,7 @@ announcements.py — NSE corporate announcements data layer.
 """
 
 import re
+import json
 import time
 import sqlite3
 import logging
@@ -1010,6 +1011,56 @@ def probe_nse():
     else:
         results.append({"method": "curl_cffi", "error": "not installed"})
 
+    return results
+
+
+RELAY_PREFIX = "https://r.jina.ai/"
+
+
+def _relay_attempt(label, url):
+    """Ask a free public relay to fetch NSE on our behalf and report the result."""
+    entry = {"method": label, "url": url}
+    try:
+        r = requests.get(url, timeout=90, headers={"Accept": "text/plain"})
+        entry["status"] = r.status_code
+        text = r.text or ""
+        entry["bytes"] = len(text)
+        entry["starts_with"] = text[:70].replace("\n", " ")
+        # the relay wraps the payload in a short preamble - find the JSON itself
+        marks = [i for i in (text.find("["), text.find("{")) if i != -1]
+        if not marks:
+            entry["json_ok"] = False
+            entry["note"] = "no JSON found in response"
+            return entry
+        body = text[min(marks):]
+        try:
+            data = json.loads(body)
+        except Exception as e:
+            entry["json_ok"] = False
+            entry["json_error"] = str(e)[:120]
+            entry["tail"] = text[-120:].replace("\n", " ")
+            return entry
+        rows = data.get("data") if isinstance(data, dict) else data
+        entry["json_ok"] = True
+        entry["rows"] = len(rows or [])
+        if rows:
+            entry["sample_symbol"] = rows[0].get("symbol")
+            entry["sample_dt"] = rows[0].get("an_dt")
+            entry["sample_keys"] = sorted(rows[0].keys())
+    except Exception as e:
+        entry["error"] = f"{type(e).__name__}: {e}"
+    return entry
+
+
+def probe_relay():
+    """Test the free-relay route: current announcements, and a date-range query."""
+    results = [_relay_attempt("nse-via-relay-latest", RELAY_PREFIX + config.NSE_ANNOUNCEMENTS_URL)]
+
+    end = _now()
+    start = end - timedelta(days=2)
+    ranged = (config.NSE_ANNOUNCEMENTS_URL
+              + f"&from_date={_nse_date_fmt(start)}&to_date={_nse_date_fmt(end)}")
+    results.append(_relay_attempt("nse-via-relay-daterange", RELAY_PREFIX + ranged))
     return results
 
 
