@@ -224,6 +224,8 @@
         .col-push   { width: 60px;  text-align: center; }
         .col-topic  { width: 200px; text-align: left;   }
         .col-new    { width: 90px;  text-align: right;  }
+        .new-total  { color: var(--text-muted); font-size: 0.78rem; margin-left: 5px; }
+        .col-new    { white-space: nowrap; }
         .col-total  { width: 90px;  text-align: right;  }
         .col-latest { width: 200px; text-align: left;   }
 
@@ -424,7 +426,7 @@
                     <tr>
                         <th class="col-push" title="Tick to receive Telegram notifications for this topic">Push</th>
                         <th class="col-topic sortable" data-sort="topic">Topic <span class="sort-icon">↕</span></th>
-                        <th class="col-new sortable" data-sort="new">New <span class="sort-icon">↕</span></th>
+                        <th class="col-new sortable" data-sort="new" title="Unread since you last opened the topic / all in range">New / Total <span class="sort-icon">↕</span></th>
                         <th class="col-total sortable" data-sort="total">Total <span class="sort-icon">↕</span></th>
                         <th class="col-latest sortable" data-sort="latest">Latest <span class="sort-icon">↕</span></th>
                     </tr>
@@ -672,9 +674,10 @@ function renderSummary() {
     } else {
         tbody.innerHTML = sorted.map(row => {
             const checked = tickedTopics.has(row.topic) ? 'checked' : '';
-            const newCell = row.new > 0
-                ? `<span class="new-badge">${row.new}</span>`
+            const badge = row.new > 0
+                ? `<span class="new-badge">${row.new.toLocaleString()}</span>`
                 : `<span class="new-zero">0</span>`;
+            const newCell = `${badge}<span class="new-total">/ ${row.total.toLocaleString()}</span>`;
             const href = buildTopicHref(row.topic);
             return `
                 <tr>
@@ -697,7 +700,7 @@ function renderSummary() {
         <tr>
             <td class="col-push"></td>
             <td class="col-topic">Total</td>
-            <td class="col-new">${totalNew}</td>
+            <td class="col-new">${totalNew}<span class="new-total">/ ${totalAll.toLocaleString()}</span></td>
             <td class="col-total">${totalAll.toLocaleString()}</td>
             <td class="col-latest"></td>
         </tr>`;
